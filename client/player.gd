@@ -3,8 +3,9 @@ extends CharacterBody3D
 const SPEED = 5.0
 const JUMP_VELOCITY = 4.5
 
-@onready var _camera := %Camera3D as Camera3D
-@onready var _camera_pivot := %CameraPivot as Node3D
+@onready var _camera: Camera3D = %Camera3D
+@onready var _camera_pivot: Node3D = %CameraPivot
+@onready var _spring_arm_3d: SpringArm3D = %SpringArm3D
 
 @export_range(0.0, 1.0) var mouse_sensitivity = 0.005
 @export var tilt_limit = deg_to_rad(75)
@@ -50,3 +51,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		else:
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	elif event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			_spring_arm_3d.spring_length -= 1.0
+			_spring_arm_3d.spring_length = max(_spring_arm_3d.spring_length, 1.0)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			_spring_arm_3d.spring_length += 1.0
