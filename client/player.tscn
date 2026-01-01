@@ -15,7 +15,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 shape = SubResource("CapsuleShape3D_sh265")
 
 [node name="AnimationLibrary_Godot_Standard" parent="." instance=ExtResource("2_onrkg")]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
 
 [node name="Skeleton3D" parent="AnimationLibrary_Godot_Standard/Rig" index="0"]
 bones/1/position = Vector3(0.0053169443, 0.08649441, 0.87717235)
@@ -74,13 +73,20 @@ bones/52/rotation = Quaternion(-0.00013704659, 0.9643068, -0.26478708, -0.000499
 [node name="CameraPivot" type="Node3D" parent="."]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.75, 0)
+top_level = true
 
-[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot"]
+[node name="CameraArm" type="SpringArm3D" parent="CameraPivot"]
 unique_name_in_owner = true
 collision_mask = 2
 spring_length = 5.0
 
-[node name="Camera3D" type="Camera3D" parent="CameraPivot/SpringArm3D"]
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/CameraArm"]
 unique_name_in_owner = true
+
+[node name="CameraPivotPosition" type="RemoteTransform3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.75, 0)
+remote_path = NodePath("../CameraPivot")
+update_rotation = false
+update_scale = false
 
 [editable path="AnimationLibrary_Godot_Standard"]
