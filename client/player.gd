@@ -33,9 +33,9 @@ func _physics_process(delta: float) -> void:
 			var target_yaw := atan2(direction.x, direction.z)
 			rotation.y = rotate_toward(rotation.y, target_yaw, TURN_SPEED * delta)
 
-	else:
-		velocity.x = move_toward(velocity.x, 0, SPEED)
-		velocity.z = move_toward(velocity.z, 0, SPEED)
+	elif is_on_floor():
+		velocity.x = 0
+		velocity.z = 0
 	
 	move_and_slide()
 
@@ -75,9 +75,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			
 			# Horizontal rotation by rotating the pivot
 			_camera_pivot.rotation.y += -event.relative.x * mouse_sensitivity
-		
-		if right_held and not left_held:
-			rotation.y += -event.relative.x * mouse_sensitivity
+			
+		if right_held:
+			# Rotate character to always keep back to camera
+			rotation.y = _camera_pivot.rotation.y + PI
 		
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
