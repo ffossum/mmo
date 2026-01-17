@@ -12,7 +12,7 @@ config_version=5
 
 config/name="mmo-client"
 run/main_scene="uid://cbdhmjdyqndmh"
-config/features=PackedStringArray("4.5", "Forward Plus")
+config/features=PackedStringArray("4.5", "C#", "Forward Plus")
 config/icon="res://icon.svg"
 
 [display]
