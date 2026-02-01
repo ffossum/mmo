@@ -9,7 +9,7 @@ use enet::*;
 fn main() -> anyhow::Result<()> {
     let enet = Enet::new().context("could not initialize ENet")?;
 
-    let local_addr = Address::new(Ipv4Addr::LOCALHOST, 9001);
+    let local_addr = Address::new(Ipv4Addr::UNSPECIFIED, 9001);
 
     let mut host = enet
         .create_host::<()>(
@@ -21,7 +21,11 @@ fn main() -> anyhow::Result<()> {
         )
         .context("could not create host")?;
 
-    println!("Server listening on 127.0.0.1:9001");
+    println!(
+        "Server listening on {hostname}:{port}",
+        hostname = local_addr.ip(),
+        port = local_addr.port()
+    );
 
     let mut last_broadcast = Instant::now();
     let broadcast_interval = Duration::from_secs(1);
@@ -89,14 +93,6 @@ fn main() -> anyhow::Result<()> {
                         eprintln!("Failed to send broadcast to {:?}: {}", peer.address(), e);
                     }
                 }
-            }
-
-            if tick_count % 10 == 0 {
-                let connected_count = host
-                    .peers()
-                    .filter(|p| p.state() == PeerState::Connected)
-                    .count();
-                println!("Tick #{} - {} clients connected", tick_count, connected_count);
             }
         }
     }

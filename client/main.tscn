@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://cbdhmjdyqndmh"]
+[gd_scene format=3 uid="uid://cbdhmjdyqndmh"]
 
 [ext_resource type="Script" uid="uid://c5ahdj274k8h1" path="res://Main.cs" id="1_0xm2m"]
 [ext_resource type="PackedScene" uid="uid://cjkqn5q6axmsq" path="res://player.tscn" id="1_ig7tw"]
@@ -16,21 +16,21 @@ sky = SubResource("Sky_tlwt5")
 tonemap_mode = 2
 glow_enabled = true
 
-[node name="Main" type="Node3D"]
+[node name="Main" type="Node3D" unique_id=1163741665]
 script = ExtResource("1_0xm2m")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=936461704]
 transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 0, 0)
 shadow_enabled = true
 metadata/_edit_lock_ = true
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=571473065]
 environment = SubResource("Environment_aqk2v")
 
-[node name="CSGBox3D" type="CSGBox3D" parent="."]
+[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=2047803349]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 use_collision = true
 collision_layer = 3
-size = Vector3(10, 1, 10)
+size = Vector3(50, 1, 50)
 
-[node name="Player" parent="." instance=ExtResource("1_ig7tw")]
+[node name="Player" parent="." unique_id=439301410 instance=ExtResource("1_ig7tw")]

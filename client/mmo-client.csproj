@@ -6,7 +6,4 @@
     <RootNamespace>mmoclient</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="ENet-CSharp" Version="2.4.8" />
-  </ItemGroup>
 </Project>

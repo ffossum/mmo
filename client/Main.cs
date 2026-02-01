@@ -1,29 +1,34 @@
 using Godot;
-using System;
 using System.Text;
-using ENet;
 
 public partial class Main : Node3D
 {
-	private Host _client;
-	private Peer _serverPeer;
+	private ENetConnection _client;
+	private ENetPacketPeer _serverPeer;
 	private bool _connected = false;
 	private double _timeSinceLastMessage = 0;
-	private const double MessageInterval = 1.0; // Send a message every second
+	private const double MessageInterval = 1.0;
+	private const string ServerHost = "172.18.186.168";
+	private const int ServerPort = 9001;
 
 	public override void _Ready()
 	{
-		Library.Initialize();
+		_client = new ENetConnection();
+		var error = _client.CreateHost(1, 0, 0, 0);
+		if (error != Error.Ok)
+		{
+			GD.PrintErr($"Failed to create ENet host: {error}");
+			return;
+		}
 
-		_client = new Host();
-		_client.Create();
-
-		Address address = new Address();
-		address.SetHost("127.0.0.1");
-		address.Port = 9001;
-
-		GD.Print("Connecting to server at 127.0.0.1:9001...");
-		_serverPeer = _client.Connect(address, 2, 0);
+		GD.Print($"Connecting to server at {ServerHost}:{ServerPort}...");
+		_serverPeer = _client.ConnectToHost(ServerHost, ServerPort, 2, 0);
+		if (_serverPeer == null)
+		{
+			GD.PrintErr("Failed to initiate connection");
+			return;
+		}
+		GD.Print($"Connection initiated, peer state: {_serverPeer.GetState()}");
 	}
 
 	public override void _Process(double delta)
@@ -31,31 +36,36 @@ public partial class Main : Node3D
 		if (_client == null) return;
 
 		// Service the ENet host to process events
-		Event enetEvent;
-		while (_client.Service(0, out enetEvent) > 0)
+		var events = _client.Service(0);
+		while (events[0].AsInt32() > 0)
 		{
-			switch (enetEvent.Type)
+			var eventType = (ENetConnection.EventType)events[0].AsInt32();
+			var peer = events[1].As<ENetPacketPeer>();
+			var data = events[2].AsInt32();
+			var channel = events[3].AsInt32();
+
+			switch (eventType)
 			{
-				case EventType.Connect:
+				case ENetConnection.EventType.Connect:
 					GD.Print("Connected to server!");
 					_connected = true;
 					SendMessage("Hello from Godot client!");
 					break;
 
-				case EventType.Disconnect:
-					GD.Print("Disconnected from server.");
+				case ENetConnection.EventType.Disconnect:
+					GD.Print($"Disconnected from server (data: {data})");
 					_connected = false;
-					_serverPeer = default;
+					_serverPeer = null;
 					break;
 
-				case EventType.Receive:
-					byte[] data = new byte[enetEvent.Packet.Length];
-					enetEvent.Packet.CopyTo(data);
-					string message = Encoding.UTF8.GetString(data);
+				case ENetConnection.EventType.Receive:
+					var packet = peer.GetPacket();
+					string message = Encoding.UTF8.GetString(packet);
 					GD.Print($"Received from server: {message}");
-					enetEvent.Packet.Dispose();
 					break;
 			}
+
+			events = _client.Service(0);
 		}
 
 		// Send periodic messages when connected
@@ -72,22 +82,19 @@ public partial class Main : Node3D
 
 	private void SendMessage(string message)
 	{
-		if (!_connected) return;
+		if (!_connected || _serverPeer == null) return;
 
 		byte[] data = Encoding.UTF8.GetBytes(message);
-		Packet packet = new Packet();
-		packet.Create(data, PacketFlags.Reliable);
-		_serverPeer.Send(0, ref packet);
+		_serverPeer.Send(0, data, (int)ENetPacketPeer.FlagReliable);
 		GD.Print($"Sent to server: {message}");
 	}
 
 	public override void _ExitTree()
 	{
-		if (_connected)
+		if (_serverPeer != null && _connected)
 		{
-			_serverPeer.Disconnect(0);
+			_serverPeer.PeerDisconnect(0);
 		}
-		_client?.Dispose();
-		Library.Deinitialize();
+		_client?.Destroy();
 	}
 }

@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://cjkqn5q6axmsq"]
+[gd_scene format=3 uid="uid://cjkqn5q6axmsq"]
 
 [ext_resource type="Script" uid="uid://fcydwjv6wyqj" path="res://player.gd" id="1_4flbx"]
 [ext_resource type="PackedScene" uid="uid://c5ufiwu8roxlh" path="res://AnimationLibrary_Godot_Standard.glb" id="2_onrkg"]
@@ -7,14 +7,14 @@
 radius = 0.15
 height = 1.8
 
-[node name="Player" type="CharacterBody3D"]
+[node name="Player" type="CharacterBody3D" unique_id=932174843]
 script = ExtResource("1_4flbx")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1715098550]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 shape = SubResource("CapsuleShape3D_sh265")
 
-[node name="AnimationLibrary_Godot_Standard" parent="." instance=ExtResource("2_onrkg")]
+[node name="AnimationLibrary_Godot_Standard" parent="." unique_id=658169130 instance=ExtResource("2_onrkg")]
 
 [node name="Skeleton3D" parent="AnimationLibrary_Godot_Standard/Rig" index="0"]
 bones/1/position = Vector3(0, 0.050100047, 0.9167)
@@ -70,21 +70,21 @@ bones/50/rotation = Quaternion(0.036589734, -0.00013117323, -4.797519e-06, 0.999
 bones/51/rotation = Quaternion(-0.5290733, -0.00032809481, 0.00034345797, 0.848576)
 bones/52/rotation = Quaternion(-0.00013717555, 0.9643068, -0.26478708, -0.00049942714)
 
-[node name="CameraPivot" type="Node3D" parent="."]
+[node name="CameraPivot" type="Node3D" parent="." unique_id=77850286]
 unique_name_in_owner = true
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 1.75, 0)
 top_level = true
 
-[node name="CameraArm" type="SpringArm3D" parent="CameraPivot"]
+[node name="CameraArm" type="SpringArm3D" parent="CameraPivot" unique_id=1497356207]
 unique_name_in_owner = true
 collision_mask = 2
 spring_length = 5.0
 
-[node name="Camera3D" type="Camera3D" parent="CameraPivot/CameraArm"]
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/CameraArm" unique_id=562762239]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.1847622e-07, 0, 4.78681)
 
-[node name="CameraPivotPosition" type="RemoteTransform3D" parent="."]
+[node name="CameraPivotPosition" type="RemoteTransform3D" parent="." unique_id=379123145]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.75, 0)
 remote_path = NodePath("../CameraPivot")
 update_rotation = false
