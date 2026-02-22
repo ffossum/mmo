@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cjkqn5q6axmsq"]
 
-[ext_resource type="Script" uid="uid://fcydwjv6wyqj" path="res://player.gd" id="1_4flbx"]
+[ext_resource type="Script" uid="uid://b7xi5errynb0v" path="res://Player.cs" id="1_4flbx"]
 [ext_resource type="PackedScene" uid="uid://c5ufiwu8roxlh" path="res://AnimationLibrary_Godot_Standard.glb" id="2_onrkg"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_sh265"]
