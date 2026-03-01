@@ -1,4 +1,15 @@
 using Godot;
+using System;
+using System.Text.Json.Serialization;
+
+public readonly struct PlayerIntent
+{
+	[JsonPropertyName("tick")] public int Tick { get; init; }
+	[JsonPropertyName("move_x")] public float MoveX { get; init; }
+	[JsonPropertyName("move_z")] public float MoveZ { get; init; }
+	[JsonPropertyName("yaw")] public float Yaw { get; init; }
+	[JsonPropertyName("jump")] public bool Jump { get; init; }
+}
 
 public partial class Player : CharacterBody3D
 {
@@ -19,6 +30,9 @@ public partial class Player : CharacterBody3D
 
 	private Vector2 _capturedMousePosition = Vector2.Zero;
 
+	public event Action<PlayerIntent> IntentEmitted;
+	private int _tick;
+
 	public override void _Ready()
 	{
 		_cameraPivot = GetNode<Node3D>("%CameraPivot");
@@ -36,7 +50,8 @@ public partial class Player : CharacterBody3D
 			velocity += GetGravity() * (float)delta;
 		}
 
-		if (Input.IsActionJustPressed("ui_accept") && IsOnFloor())
+		bool jumpPressed = Input.IsActionJustPressed("ui_accept") && IsOnFloor();
+		if (jumpPressed)
 		{
 			velocity.Y = JumpVelocity;
 		}
@@ -51,17 +66,23 @@ public partial class Player : CharacterBody3D
 			inputDir.Y -= 1;
 		}
 
+		float moveX = 0f;
+		float moveZ = 0f;
+		float yaw = Rotation.Y;
+
 		if (inputDir != Vector2.Zero)
 		{
 			Vector3 direction = (_cameraPivot.Basis * new Vector3(inputDir.X, 0, inputDir.Y)).Normalized();
 			velocity.X = direction.X * Speed;
 			velocity.Z = direction.Z * Speed;
+			moveX = direction.X;
+			moveZ = direction.Z;
 
 			if (!rightHeld)
 			{
-				float targetYaw = Mathf.Atan2(direction.X, direction.Z);
+				yaw = Mathf.Atan2(direction.X, direction.Z);
 				Vector3 rot = Rotation;
-				rot.Y = Mathf.RotateToward(rot.Y, targetYaw, TurnSpeed * (float)delta);
+				rot.Y = Mathf.RotateToward(rot.Y, yaw, TurnSpeed * (float)delta);
 				Rotation = rot;
 			}
 		}
@@ -71,8 +92,22 @@ public partial class Player : CharacterBody3D
 			velocity.Z = 0;
 		}
 
+		if (rightHeld)
+		{
+			yaw = _cameraPivot.Rotation.Y + Mathf.Pi;
+		}
+
 		Velocity = velocity;
 		MoveAndSlide();
+
+		IntentEmitted?.Invoke(new PlayerIntent
+		{
+			Tick = _tick++,
+			MoveX = moveX,
+			MoveZ = moveZ,
+			Yaw = yaw,
+			Jump = jumpPressed,
+		});
 	}
 
 	public override void _Process(double delta)

@@ -1,13 +1,12 @@
 using Godot;
 using System.Text;
+using System.Text.Json;
 
 public partial class Main : Node3D
 {
 	private ENetConnection _client;
 	private ENetPacketPeer _serverPeer;
 	private bool _connected = false;
-	private double _timeSinceLastMessage = 0;
-	private const double MessageInterval = 1.0;
 	private const string ServerHost = "172.18.186.168";
 	private const int ServerPort = 9001;
 
@@ -29,6 +28,9 @@ public partial class Main : Node3D
 			return;
 		}
 		GD.Print($"Connection initiated, peer state: {_serverPeer.GetState()}");
+
+		var player = GetNode<Player>("Player");
+		player.IntentEmitted += OnPlayerIntent;
 	}
 
 	public override void _Process(double delta)
@@ -68,16 +70,15 @@ public partial class Main : Node3D
 			events = _client.Service(0);
 		}
 
-		// Send periodic messages when connected
-		if (_connected)
-		{
-			_timeSinceLastMessage += delta;
-			if (_timeSinceLastMessage >= MessageInterval)
-			{
-				_timeSinceLastMessage = 0;
-				SendMessage($"Client tick at {Time.GetTicksMsec()}ms");
-			}
-		}
+	}
+
+	private void OnPlayerIntent(PlayerIntent intent)
+	{
+		if (!_connected || _serverPeer == null) return;
+
+		string json = JsonSerializer.Serialize(intent);
+		byte[] data = Encoding.UTF8.GetBytes(json);
+		_serverPeer.Send(1, data, 0);
 	}
 
 	private void SendMessage(string message)
