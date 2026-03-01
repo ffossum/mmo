@@ -81,9 +81,6 @@ public partial class Player : CharacterBody3D
 			if (!rightHeld)
 			{
 				yaw = Mathf.Atan2(direction.X, direction.Z);
-				Vector3 rot = Rotation;
-				rot.Y = Mathf.RotateToward(rot.Y, yaw, TurnSpeed * (float)delta);
-				Rotation = rot;
 			}
 		}
 		else if (IsOnFloor())
@@ -96,6 +93,10 @@ public partial class Player : CharacterBody3D
 		{
 			yaw = _cameraPivot.Rotation.Y + Mathf.Pi;
 		}
+
+		Vector3 rot = Rotation;
+		rot.Y = Mathf.RotateToward(rot.Y, yaw, TurnSpeed * (float)delta);
+		Rotation = rot;
 
 		Velocity = velocity;
 		MoveAndSlide();
@@ -163,12 +164,6 @@ public partial class Player : CharacterBody3D
 				_cameraPivot.Rotation = pivotRot;
 			}
 
-			if (rightHeld)
-			{
-				Vector3 rot = Rotation;
-				rot.Y = _cameraPivot.Rotation.Y + Mathf.Pi;
-				Rotation = rot;
-			}
 		}
 		else if (@event is InputEventMouseButton mouseButton)
 		{
@@ -180,12 +175,6 @@ public partial class Player : CharacterBody3D
 			else if (mouseButton.ButtonIndex == MouseButton.WheelDown && mouseButton.Pressed)
 			{
 				_cameraArm.SpringLength += 1.0f;
-			}
-			else if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
-			{
-				Vector3 rot = Rotation;
-				rot.Y = _cameraPivot.Rotation.Y + Mathf.Pi;
-				Rotation = rot;
 			}
 		}
 	}
