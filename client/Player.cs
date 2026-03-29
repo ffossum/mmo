@@ -32,6 +32,10 @@ public partial class Player : CharacterBody3D
 
 	public event Action<PlayerIntent> IntentEmitted;
 	private int _tick;
+	private float _lastMoveX;
+	private float _lastMoveZ;
+	private float _lastYaw;
+	private bool _lastJump;
 
 	public override void _Ready()
 	{
@@ -101,14 +105,23 @@ public partial class Player : CharacterBody3D
 		Velocity = velocity;
 		MoveAndSlide();
 
-		IntentEmitted?.Invoke(new PlayerIntent
+		bool dirty = moveX != _lastMoveX || moveZ != _lastMoveZ || yaw != _lastYaw || jumpPressed != _lastJump;
+		if (dirty)
 		{
-			Tick = _tick++,
-			MoveX = moveX,
-			MoveZ = moveZ,
-			Yaw = yaw,
-			Jump = jumpPressed,
-		});
+			_lastMoveX = moveX;
+			_lastMoveZ = moveZ;
+			_lastYaw = yaw;
+			_lastJump = jumpPressed;
+
+			IntentEmitted?.Invoke(new PlayerIntent
+			{
+				Tick = _tick++,
+				MoveX = moveX,
+				MoveZ = moveZ,
+				Yaw = yaw,
+				Jump = jumpPressed,
+			});
+		}
 	}
 
 	public override void _Process(double delta)
