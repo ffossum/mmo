@@ -1,10 +1,27 @@
 extern crate enet;
 
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use enet::*;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct PlayerIntent {
+    tick: i32,
+    move_x: f32,
+    move_z: f32,
+    yaw: f32,
+    jump: bool,
+}
+
+#[derive(Debug, Default)]
+struct PlayerState {
+    position: [f32; 3],
+    velocity: [f32; 3],
+    yaw: f32,
+}
 
 fn main() -> anyhow::Result<()> {
     let enet = Enet::new().context("could not initialize ENet")?;
@@ -27,73 +44,58 @@ fn main() -> anyhow::Result<()> {
         port = local_addr.port()
     );
 
-    let mut last_broadcast = Instant::now();
-    let broadcast_interval = Duration::from_secs(1);
-    let mut tick_count: u64 = 0;
+    // Track connected players keyed by peer address (ip:port string).
+    // We use the address string because enet-rs doesn't expose a stable peer ID.
+    let mut players: HashMap<String, PlayerState> = HashMap::new();
 
     loop {
-        // Service with a shorter timeout to allow for regular broadcasts
         match host.service(100).context("service failed")? {
-            Some(Event::Connect(ref mut peer)) => {
-                println!("New connection from: {:?}", peer.address());
-
-                // Send welcome message to the new client
-                let welcome = format!("Welcome to the server! You are connected.");
-                peer.send_packet(
-                    Packet::new(welcome.as_bytes(), PacketMode::ReliableSequenced)
-                        .context("failed to create packet")?,
-                    0,
-                )
-                .context("failed to send welcome packet")?;
+            Some(Event::Connect(ref peer)) => {
+                let addr = format!("{:?}", peer.address());
+                println!("New connection from: {}", addr);
+                players.insert(addr, PlayerState::default());
             }
             Some(Event::Disconnect(ref peer, _)) => {
-                println!("Disconnected: {:?}", peer.address());
+                let addr = format!("{:?}", peer.address());
+                println!("Disconnected: {}", addr);
+                players.remove(&addr);
             }
             Some(Event::Receive {
-                ref mut sender,
+                ref sender,
                 channel_id,
                 ref packet,
                 ..
             }) => {
-                let message = std::str::from_utf8(packet.data()).unwrap_or("<invalid utf8>");
-                println!(
-                    "Received from {:?} on channel {}: '{}'",
-                    sender.address(),
-                    channel_id,
-                    message
-                );
+                let addr = format!("{:?}", sender.address());
+                let data = packet.data();
 
-                // Echo the message back with a prefix
-                let response = format!("Server received: {}", message);
-                sender
-                    .send_packet(
-                        Packet::new(response.as_bytes(), PacketMode::ReliableSequenced)
-                            .context("failed to create packet")?,
-                        0,
-                    )
-                    .context("failed to send response packet")?;
-            }
-            _ => (),
-        }
-
-        // Send periodic broadcast to all connected clients
-        if last_broadcast.elapsed() >= broadcast_interval {
-            last_broadcast = Instant::now();
-            tick_count += 1;
-
-            let broadcast_msg = format!("Server tick #{}", tick_count);
-
-            for mut peer in host.peers() {
-                if peer.state() == PeerState::Connected {
-                    if let Err(e) = peer.send_packet(
-                        Packet::new(broadcast_msg.as_bytes(), PacketMode::ReliableSequenced)
-                            .context("failed to create broadcast packet")?,
-                        0,
-                    ) {
-                        eprintln!("Failed to send broadcast to {:?}: {}", peer.address(), e);
+                if channel_id == 1 {
+                    // Movement channel — deserialize PlayerIntent
+                    match serde_json::from_slice::<PlayerIntent>(data) {
+                        Ok(intent) => {
+                            if let Some(state) = players.get_mut(&addr) {
+                                state.velocity[0] = intent.move_x;
+                                state.velocity[2] = intent.move_z;
+                                state.yaw = intent.yaw;
+                                println!(
+                                    "Player {} tick={} move=({}, {}) yaw={:.2} jump={}",
+                                    addr, intent.tick, intent.move_x, intent.move_z, intent.yaw, intent.jump
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to parse PlayerIntent from {}: {}", addr, e);
+                        }
                     }
+                } else {
+                    let message = std::str::from_utf8(data).unwrap_or("<invalid utf8>");
+                    println!(
+                        "Received from {} on channel {}: '{}'",
+                        addr, channel_id, message
+                    );
                 }
             }
+            _ => (),
         }
     }
 }
