@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 enet = "0.3.0"
-joltc-sys = "0.3"
-rolt = "0.3"
+rapier3d = { version = "0.22", features = ["simd-stable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
