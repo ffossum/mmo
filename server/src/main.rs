@@ -15,8 +15,15 @@ struct PlayerState {
     move_z: f32,
 }
 
+const COLLISION_MESH_PATH: &str = "../shared/collision.glb";
+
 fn main() -> anyhow::Result<()> {
     let mut physics = PhysicsWorld::new();
+    let count = physics.load_collision(COLLISION_MESH_PATH)?;
+    println!(
+        "Loaded {} collision mesh(es) from {}",
+        count, COLLISION_MESH_PATH
+    );
 
     let enet = enet::Enet::new().map_err(|e| anyhow::anyhow!("{}", e))?;
     let mut network = Network::new(&enet, 9001)?;
@@ -58,27 +65,11 @@ fn main() -> anyhow::Result<()> {
         if last_tick.elapsed() >= tick_rate {
             last_tick += tick_rate;
 
-            let speed = 5.0_f32;
-            for state in players.values() {
-                physics.set_player_velocity(
-                    state.body_handle,
-                    state.move_x * speed,
-                    state.move_z * speed,
-                );
-            }
-
-            physics.step();
-
-            for (&id, state) in &players {
-                if state.move_x != 0.0 || state.move_z != 0.0 {
-                    if let Some(pos) = physics.get_position(state.body_handle) {
-                        println!(
-                            "Player {} pos=({:.2}, {:.2}, {:.2})",
-                            id, pos[0], pos[1], pos[2]
-                        );
-                    }
-                }
-            }
+            physics.tick(
+                players
+                    .values()
+                    .map(|s| (s.body_handle, s.move_x, s.move_z)),
+            );
         }
     }
 }

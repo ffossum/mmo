@@ -1,3 +1,5 @@
+use anyhow::Context;
+use nalgebra::{Matrix4, Point3};
 use rapier3d::prelude::*;
 
 pub struct PhysicsWorld {
@@ -18,18 +20,6 @@ pub struct PhysicsWorld {
 
 impl PhysicsWorld {
     pub fn new() -> Self {
-        let mut rigid_body_set = RigidBodySet::new();
-        let mut collider_set = ColliderSet::new();
-
-        // Create ground plane (large flat box)
-        let floor_body =
-            rigid_body_set.insert(RigidBodyBuilder::fixed().translation(vector![0.0, -1.0, 0.0]));
-        collider_set.insert_with_parent(
-            ColliderBuilder::cuboid(100.0, 1.0, 100.0),
-            floor_body,
-            &mut rigid_body_set,
-        );
-
         Self {
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: IntegrationParameters {
@@ -40,14 +30,82 @@ impl PhysicsWorld {
             island_manager: IslandManager::new(),
             broad_phase: DefaultBroadPhase::new(),
             narrow_phase: NarrowPhase::new(),
-            rigid_body_set,
-            collider_set,
+            rigid_body_set: RigidBodySet::new(),
+            collider_set: ColliderSet::new(),
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            player_half_height: 0.75,
-            player_radius: 0.3,
+            player_half_height: 0.9,
+            player_radius: 0.2,
         }
+    }
+
+    pub fn load_collision(&mut self, path: &str) -> anyhow::Result<usize> {
+        let (doc, buffers, _) = gltf::import(path)
+            .with_context(|| format!("failed to load collision mesh: {}", path))?;
+
+        let mut count = 0;
+        for scene in doc.scenes() {
+            for node in scene.nodes() {
+                count += self.load_node(&node, &buffers, &Matrix4::identity());
+            }
+        }
+
+        Ok(count)
+    }
+
+    fn load_node(
+        &mut self,
+        node: &gltf::Node,
+        buffers: &[gltf::buffer::Data],
+        parent_transform: &Matrix4<f32>,
+    ) -> usize {
+        let m = node.transform().matrix();
+        let local = Matrix4::from_columns(&[m[0].into(), m[1].into(), m[2].into(), m[3].into()]);
+        let global = parent_transform * local;
+
+        let mut count = 0;
+
+        if let Some(mesh) = node.mesh() {
+            for primitive in mesh.primitives() {
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+                let Some(positions) = reader.read_positions() else {
+                    continue;
+                };
+                let Some(indices) = reader.read_indices() else {
+                    continue;
+                };
+
+                let vertices: Vec<Point<f32>> = positions
+                    .map(|p| {
+                        let transformed = global.transform_point(&Point3::from(p));
+                        point![transformed.x, transformed.y, transformed.z]
+                    })
+                    .collect();
+
+                let tri_indices: Vec<[u32; 3]> = indices
+                    .into_u32()
+                    .collect::<Vec<u32>>()
+                    .chunks(3)
+                    .map(|c| [c[0], c[1], c[2]])
+                    .collect();
+
+                let body = self.rigid_body_set.insert(RigidBodyBuilder::fixed());
+                self.collider_set.insert_with_parent(
+                    ColliderBuilder::trimesh(vertices, tri_indices),
+                    body,
+                    &mut self.rigid_body_set,
+                );
+                count += 1;
+            }
+        }
+
+        for child in node.children() {
+            count += self.load_node(&child, buffers, &global);
+        }
+
+        count
     }
 
     pub fn add_player(&mut self) -> RigidBodyHandle {
@@ -73,22 +131,32 @@ impl PhysicsWorld {
         );
     }
 
-    pub fn set_player_velocity(&mut self, handle: RigidBodyHandle, vel_x: f32, vel_z: f32) {
-        if let Some(body) = self.rigid_body_set.get_mut(handle) {
-            body.set_linvel(vector![vel_x, body.linvel().y, vel_z], true);
+    pub fn tick(&mut self, player_inputs: impl Iterator<Item = (RigidBodyHandle, f32, f32)>) {
+        let speed = 5.0_f32;
+        for (handle, move_x, move_z) in player_inputs {
+            if let Some(body) = self.rigid_body_set.get_mut(handle) {
+                body.set_linvel(
+                    vector![move_x * speed, body.linvel().y, move_z * speed],
+                    true,
+                );
+            }
+        }
+
+        self.step();
+
+        #[cfg(debug_assertions)]
+        for (handle, body) in self.rigid_body_set.iter() {
+            if body.is_dynamic() && body.is_moving() {
+                let pos = body.translation();
+                println!(
+                    "Body {:?} pos=({:.2}, {:.2}, {:.2})",
+                    handle, pos.x, pos.y, pos.z
+                );
+            }
         }
     }
 
-    pub fn get_position(&self, handle: RigidBodyHandle) -> Option<[f32; 3]> {
-        self.rigid_body_set
-            .get(handle)
-            .map(|body| {
-                let pos = body.translation();
-                [pos.x, pos.y, pos.z]
-            })
-    }
-
-    pub fn step(&mut self) {
+    fn step(&mut self) {
         self.pipeline.step(
             &self.gravity,
             &self.integration_parameters,
