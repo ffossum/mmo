@@ -109,8 +109,8 @@ fn main() -> anyhow::Result<()> {
                 );
             }
             Some(Event::Disconnect(ref peer, _)) => {
-                if let Some(&id) = peer.data() {
-                    if let Some(state) = players.remove(&id) {
+                if let Some(&id) = peer.data()
+                    && let Some(state) = players.remove(&id) {
                         rigid_body_set.remove(
                             state.body_handle,
                             &mut island_manager,
@@ -121,7 +121,6 @@ fn main() -> anyhow::Result<()> {
                         );
                         println!("Player {} disconnected, body removed", id);
                     }
-                }
             }
             Some(Event::Receive {
                 ref sender,
