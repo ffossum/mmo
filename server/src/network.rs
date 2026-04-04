@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 
 use anyhow::Context;
 use enet::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub type PlayerId = u32;
 
@@ -20,6 +20,13 @@ pub enum ServerEvent {
     PlayerDisconnected(PlayerId),
     PlayerInput(PlayerId, PlayerIntent),
     None,
+}
+
+#[derive(Serialize)]
+pub struct PlayerPosition {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 pub struct Network {
@@ -97,6 +104,25 @@ impl Network {
                 }
             }
             _ => Ok(ServerEvent::None),
+        }
+    }
+
+    pub fn send_position(&mut self, player_id: PlayerId, pos: &PlayerPosition) {
+        let json = serde_json::to_string(pos).unwrap();
+        let data = json.as_bytes();
+
+        for mut peer in self.host.peers() {
+            if peer.state() == PeerState::Connected {
+                if let Some(&id) = peer.data() {
+                    if id == player_id {
+                        let _ = peer.send_packet(
+                            Packet::new(data, PacketMode::UnreliableUnsequenced).unwrap(),
+                            1,
+                        );
+                        break;
+                    }
+                }
+            }
         }
     }
 }

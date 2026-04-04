@@ -2,11 +2,19 @@ using Godot;
 using System.Text;
 using System.Text.Json;
 
+public readonly struct ServerPosition
+{
+	[System.Text.Json.Serialization.JsonPropertyName("x")] public float X { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("y")] public float Y { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("z")] public float Z { get; init; }
+}
+
 public partial class Main : Node3D
 {
 	private ENetConnection _client;
 	private ENetPacketPeer _serverPeer;
 	private bool _connected = false;
+	private Player _player;
 	private const string ServerHost = "172.18.186.168";
 	private const int ServerPort = 9001;
 
@@ -29,8 +37,8 @@ public partial class Main : Node3D
 		}
 		GD.Print($"Connection initiated, peer state: {_serverPeer.GetState()}");
 
-		var player = GetNode<Player>("Player");
-		player.IntentEmitted += OnPlayerIntent;
+		_player = GetNode<Player>("Player");
+		_player.IntentEmitted += OnPlayerIntent;
 	}
 
 	public override void _Process(double delta)
@@ -62,8 +70,12 @@ public partial class Main : Node3D
 
 				case ENetConnection.EventType.Receive:
 					var packet = peer.GetPacket();
-					string message = Encoding.UTF8.GetString(packet);
-					GD.Print($"Received from server: {message}");
+					if (channel == 1)
+					{
+						string json = Encoding.UTF8.GetString(packet);
+						var pos = JsonSerializer.Deserialize<ServerPosition>(json);
+						_player.ApplyServerPosition(new Vector3(pos.X, pos.Y, pos.Z));
+					}
 					break;
 			}
 

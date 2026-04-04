@@ -4,12 +4,11 @@ mod physics;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use network::{Network, PlayerId, ServerEvent};
-use physics::PhysicsWorld;
-use rapier3d::prelude::RigidBodyHandle;
+use network::{Network, PlayerId, PlayerPosition, ServerEvent};
+use physics::{PhysicsWorld, PlayerBody};
 
 struct PlayerState {
-    body_handle: RigidBodyHandle,
+    body: PlayerBody,
     yaw: f32,
     move_x: f32,
     move_z: f32,
@@ -36,11 +35,11 @@ fn main() -> anyhow::Result<()> {
     loop {
         match network.poll()? {
             ServerEvent::PlayerConnected(id) => {
-                let body_handle = physics.add_player();
+                let body = physics.add_player();
                 players.insert(
                     id,
                     PlayerState {
-                        body_handle,
+                        body,
                         yaw: 0.0,
                         move_x: 0.0,
                         move_z: 0.0,
@@ -49,7 +48,7 @@ fn main() -> anyhow::Result<()> {
             }
             ServerEvent::PlayerDisconnected(id) => {
                 if let Some(state) = players.remove(&id) {
-                    physics.remove_player(state.body_handle);
+                    physics.remove_player(state.body);
                 }
             }
             ServerEvent::PlayerInput(id, intent) => {
@@ -65,11 +64,23 @@ fn main() -> anyhow::Result<()> {
         if last_tick.elapsed() >= tick_rate {
             last_tick += tick_rate;
 
-            physics.tick(
-                players
-                    .values()
-                    .map(|s| (s.body_handle, s.move_x, s.move_z)),
-            );
+            for state in players.values_mut() {
+                physics.update_player(&mut state.body, state.move_x, state.move_z);
+            }
+            physics.tick();
+
+            for (&id, state) in &players {
+                if let Some(pos) = physics.get_position(&state.body) {
+                    network.send_position(
+                        id,
+                        &PlayerPosition {
+                            x: pos[0],
+                            y: pos[1],
+                            z: pos[2],
+                        },
+                    );
+                }
+            }
         }
     }
 }

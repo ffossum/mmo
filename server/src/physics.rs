@@ -1,10 +1,21 @@
 use anyhow::Context;
 use nalgebra::{Matrix4, Point3};
+use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
+
+// Matches client CapsuleShape3D: height=1.8, radius=0.2
+// Rapier's capsule_y half_height is half the segment length (excluding hemispheres)
+const PLAYER_HALF_HEIGHT: f32 = 0.7;
+const PLAYER_RADIUS: f32 = 0.2;
+
+pub struct PlayerBody {
+    body_handle: RigidBodyHandle,
+    velocity_y: f32,
+}
 
 pub struct PhysicsWorld {
     gravity: Vector<f32>,
-    integration_parameters: IntegrationParameters,
+    dt: f32,
     pipeline: PhysicsPipeline,
     island_manager: IslandManager,
     broad_phase: DefaultBroadPhase,
@@ -14,18 +25,16 @@ pub struct PhysicsWorld {
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    player_half_height: f32,
-    player_radius: f32,
+    query_pipeline: QueryPipeline,
+    character_controller: KinematicCharacterController,
+    character_shape: SharedShape,
 }
 
 impl PhysicsWorld {
     pub fn new() -> Self {
         Self {
             gravity: vector![0.0, -9.81, 0.0],
-            integration_parameters: IntegrationParameters {
-                dt: 1.0 / 30.0,
-                ..Default::default()
-            },
+            dt: 1.0 / 30.0,
             pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
             broad_phase: DefaultBroadPhase::new(),
@@ -35,8 +44,12 @@ impl PhysicsWorld {
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            player_half_height: 0.9,
-            player_radius: 0.2,
+            query_pipeline: QueryPipeline::new(),
+            character_controller: KinematicCharacterController {
+                snap_to_ground: Some(CharacterLength::Absolute(0.1)),
+                ..Default::default()
+            },
+            character_shape: SharedShape::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS),
         }
     }
 
@@ -108,21 +121,30 @@ impl PhysicsWorld {
         count
     }
 
-    pub fn add_player(&mut self) -> RigidBodyHandle {
-        let body_handle = self
-            .rigid_body_set
-            .insert(RigidBodyBuilder::dynamic().translation(vector![0.0, 2.0, 0.0]));
+    pub fn add_player(&mut self) -> PlayerBody {
+        let body_handle = self.rigid_body_set.insert(
+            RigidBodyBuilder::kinematic_position_based().translation(vector![0.0, 2.0, 0.0]),
+        );
+        // Offset collider so body position = feet (matching Godot's CharacterBody3D convention)
+        let collider_offset = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
         self.collider_set.insert_with_parent(
-            ColliderBuilder::capsule_y(self.player_half_height, self.player_radius),
+            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS).translation(vector![
+                0.0,
+                collider_offset,
+                0.0
+            ]),
             body_handle,
             &mut self.rigid_body_set,
         );
-        body_handle
+        PlayerBody {
+            body_handle,
+            velocity_y: 0.0,
+        }
     }
 
-    pub fn remove_player(&mut self, handle: RigidBodyHandle) {
+    pub fn remove_player(&mut self, player: PlayerBody) {
         self.rigid_body_set.remove(
-            handle,
+            player.body_handle,
             &mut self.island_manager,
             &mut self.collider_set,
             &mut self.impulse_joint_set,
@@ -131,35 +153,56 @@ impl PhysicsWorld {
         );
     }
 
-    pub fn tick(&mut self, player_inputs: impl Iterator<Item = (RigidBodyHandle, f32, f32)>) {
+    pub fn update_player(&mut self, player: &mut PlayerBody, move_x: f32, move_z: f32) {
         let speed = 5.0_f32;
-        for (handle, move_x, move_z) in player_inputs {
-            if let Some(body) = self.rigid_body_set.get_mut(handle) {
-                body.set_linvel(
-                    vector![move_x * speed, body.linvel().y, move_z * speed],
-                    true,
-                );
-            }
+
+        let Some(body) = self.rigid_body_set.get(player.body_handle) else {
+            return;
+        };
+
+        player.velocity_y += self.gravity.y * self.dt;
+
+        let desired = vector![
+            move_x * speed * self.dt,
+            player.velocity_y * self.dt,
+            move_z * speed * self.dt
+        ];
+
+        // Offset shape position to match the collider offset (body origin = feet)
+        let collider_offset = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
+        let mut shape_pos = *body.position();
+        shape_pos.translation.y += collider_offset;
+
+        let movement = self.character_controller.move_shape(
+            self.dt,
+            &self.rigid_body_set,
+            &self.collider_set,
+            &self.query_pipeline,
+            self.character_shape.as_ref(),
+            &shape_pos,
+            desired,
+            QueryFilter::default().exclude_rigid_body(player.body_handle),
+            |_| {},
+        );
+
+        if movement.grounded {
+            player.velocity_y = 0.0;
         }
 
-        self.step();
-
-        #[cfg(debug_assertions)]
-        for (handle, body) in self.rigid_body_set.iter() {
-            if body.is_dynamic() && body.is_moving() {
-                let pos = body.translation();
-                println!(
-                    "Body {:?} pos=({:.2}, {:.2}, {:.2})",
-                    handle, pos.x, pos.y, pos.z
-                );
-            }
+        if let Some(body) = self.rigid_body_set.get_mut(player.body_handle) {
+            let new_pos = body.position().translation.vector + movement.translation;
+            body.set_next_kinematic_translation(new_pos);
         }
     }
 
-    fn step(&mut self) {
+    pub fn tick(&mut self) {
+        self.query_pipeline.update(&self.collider_set);
         self.pipeline.step(
             &self.gravity,
-            &self.integration_parameters,
+            &IntegrationParameters {
+                dt: self.dt,
+                ..Default::default()
+            },
             &mut self.island_manager,
             &mut self.broad_phase,
             &mut self.narrow_phase,
@@ -172,5 +215,12 @@ impl PhysicsWorld {
             &(),
             &(),
         );
+    }
+
+    pub fn get_position(&self, player: &PlayerBody) -> Option<[f32; 3]> {
+        self.rigid_body_set.get(player.body_handle).map(|body| {
+            let pos = body.translation();
+            [pos.x, pos.y, pos.z]
+        })
     }
 }

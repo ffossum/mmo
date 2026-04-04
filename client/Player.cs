@@ -124,6 +124,11 @@ public partial class Player : CharacterBody3D
 		}
 	}
 
+	public void ApplyServerPosition(Vector3 position)
+	{
+		GlobalPosition = position;
+	}
+
 	public override void _Process(double delta)
 	{
 		if (!IsOnFloor())
