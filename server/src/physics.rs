@@ -33,7 +33,7 @@ pub struct PhysicsWorld {
 impl PhysicsWorld {
     pub fn new() -> Self {
         Self {
-            gravity: vector![0.0, -9.81, 0.0],
+            gravity: vector![0.0, -9.8, 0.0],
             dt: 1.0 / 30.0,
             pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
