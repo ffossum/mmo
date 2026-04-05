@@ -147,6 +147,7 @@ public partial class Player : CharacterBody3D
 		{
 			_serverReady = true;
 			GlobalPosition = serverPosition;
+			Velocity = Vector3.Zero;
 			return;
 		}
 		_pendingCorrectionPos = serverPosition;
@@ -163,11 +164,9 @@ public partial class Player : CharacterBody3D
 
 		Vector3 predicted = _positionBuffer[serverTick % InputBufferSize];
 
-		float error = predicted.DistanceTo(serverPosition);
-		if (error < ReconciliationThreshold)
+		if (predicted.DistanceTo(serverPosition) < ReconciliationThreshold)
 			return;
 
-		GD.Print($"Correction at tick {serverTick}: error={error:F3}, server={serverPosition}, predicted={predicted}");
 		GlobalPosition = serverPosition;
 
 		for (int t = serverTick + 1; t < _tick; t++)

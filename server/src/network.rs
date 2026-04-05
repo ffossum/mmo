@@ -58,8 +58,8 @@ impl Network {
         Ok(Self { host, next_id: 1 })
     }
 
-    pub fn poll(&mut self) -> anyhow::Result<ServerEvent> {
-        match self.host.service(1).context("service failed")? {
+    pub fn poll(&mut self, timeout_ms: u32) -> anyhow::Result<ServerEvent> {
+        match self.host.service(timeout_ms).context("service failed")? {
             Some(Event::Connect(ref mut peer)) => {
                 let id = self.next_id;
                 self.next_id += 1;

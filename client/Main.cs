@@ -42,11 +42,14 @@ public partial class Main : Node3D
 		_player.IntentEmitted += OnPlayerIntent;
 	}
 
-	public override void _Process(double delta)
+	public override void _PhysicsProcess(double delta)
+	{
+		ServiceENet();
+	}
+
+	private void ServiceENet()
 	{
 		if (_client == null) return;
-
-		// Service the ENet host to process events
 		var events = _client.Service(0);
 		while (events[0].AsInt32() > 0)
 		{
@@ -82,7 +85,6 @@ public partial class Main : Node3D
 
 			events = _client.Service(0);
 		}
-
 	}
 
 	private void OnPlayerIntent(PlayerIntent intent)
@@ -92,6 +94,7 @@ public partial class Main : Node3D
 		string json = JsonSerializer.Serialize(intent);
 		byte[] data = Encoding.UTF8.GetBytes(json);
 		_serverPeer.Send(1, data, 0);
+		ServiceENet();
 	}
 
 	private void SendMessage(string message)

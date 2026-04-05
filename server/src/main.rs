@@ -16,6 +16,50 @@ struct PlayerState {
 
 const COLLISION_MESH_PATH: &str = "../shared/collision.glb";
 
+fn handle_event(
+    network: &mut Network,
+    physics: &mut PhysicsWorld,
+    players: &mut HashMap<PlayerId, PlayerState>,
+    timeout_ms: u32,
+) -> anyhow::Result<bool> {
+    match network.poll(timeout_ms)? {
+        ServerEvent::PlayerConnected(id) => {
+            let body = physics.add_player();
+            players.insert(
+                id,
+                PlayerState {
+                    body,
+                    yaw: 0.0,
+                    input_queue: VecDeque::new(),
+                    last_tick: 0,
+                },
+            );
+            Ok(true)
+        }
+        ServerEvent::PlayerDisconnected(id) => {
+            if let Some(state) = players.remove(&id) {
+                physics.remove_player(state.body);
+            }
+            Ok(true)
+        }
+        ServerEvent::PlayerInput(id, intent) => {
+            if let Some(state) = players.get_mut(&id) {
+                let newest = state
+                    .input_queue
+                    .back()
+                    .map(|i| i.tick)
+                    .unwrap_or(state.last_tick);
+                if intent.tick > newest {
+                    state.yaw = intent.yaw;
+                    state.input_queue.push_back(intent);
+                }
+            }
+            Ok(true)
+        }
+        ServerEvent::None => Ok(false),
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let mut physics = PhysicsWorld::new();
     let count = physics.load_collision(COLLISION_MESH_PATH)?;
@@ -33,39 +77,14 @@ fn main() -> anyhow::Result<()> {
     let mut last_tick = Instant::now();
 
     loop {
-        match network.poll()? {
-            ServerEvent::PlayerConnected(id) => {
-                let body = physics.add_player();
-                players.insert(
-                    id,
-                    PlayerState {
-                        body,
-                        yaw: 0.0,
-                        input_queue: VecDeque::new(),
-                        last_tick: 0,
-                    },
-                );
-            }
-            ServerEvent::PlayerDisconnected(id) => {
-                if let Some(state) = players.remove(&id) {
-                    physics.remove_player(state.body);
-                }
-            }
-            ServerEvent::PlayerInput(id, intent) => {
-                if let Some(state) = players.get_mut(&id) {
-                    let newest = state.input_queue.back()
-                        .map(|i| i.tick)
-                        .unwrap_or(state.last_tick);
-                    if intent.tick > newest {
-                        state.yaw = intent.yaw;
-                        state.input_queue.push_back(intent);
-                    }
-                }
-            }
-            ServerEvent::None => {}
-        }
+        let remaining = tick_rate.saturating_sub(last_tick.elapsed());
+        let timeout_ms = remaining.as_millis() as u32;
+        handle_event(&mut network, &mut physics, &mut players, timeout_ms)?;
 
         if last_tick.elapsed() >= tick_rate {
+            // Drain all pending events before physics tick
+            while handle_event(&mut network, &mut physics, &mut players, 0)? {}
+
             last_tick += tick_rate;
 
             for state in players.values_mut() {
