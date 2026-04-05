@@ -16,11 +16,12 @@ public partial class Player : CharacterBody3D
 	private const float Speed = 5.0f;
 	private const float TurnSpeed = 15.0f;
 	private const float JumpVelocity = 4.5f;
+	private const int InputBufferSize = 128;
+	private const float ReconciliationThreshold = 0.1f;
 
 	private Node3D _cameraPivot;
 	private SpringArm3D _cameraArm;
 	private AnimationPlayer _animationPlayer;
-	private Node3D _rig;
 
 	[Export(PropertyHint.Range, "0.0,1.0")]
 	public float MouseSensitivity { get; set; } = 0.005f;
@@ -31,35 +32,45 @@ public partial class Player : CharacterBody3D
 	private Vector2 _capturedMousePosition = Vector2.Zero;
 
 	public event Action<PlayerIntent> IntentEmitted;
-	private int _tick;
-	private float _lastMoveX;
-	private float _lastMoveZ;
-	private float _lastYaw;
-	private bool _lastJump;
+	private int _tick = 1;
+	private bool _serverReady;
+
+	private PlayerIntent[] _inputBuffer = new PlayerIntent[InputBufferSize];
+	private Vector3[] _positionBuffer = new Vector3[InputBufferSize];
+
+	private Vector3? _pendingCorrectionPos;
+	private int _pendingCorrectionTick;
 
 	public override void _Ready()
 	{
 		_cameraPivot = GetNode<Node3D>("%CameraPivot");
 		_cameraArm = GetNode<SpringArm3D>("%CameraArm");
 		_animationPlayer = GetNode<AnimationPlayer>("AnimationLibrary_Godot_Standard/AnimationPlayer");
-		_rig = GetNode<Node3D>("AnimationLibrary_Godot_Standard/Rig");
 	}
 
 	public override void _PhysicsProcess(double delta)
 	{
-		Vector3 velocity = Velocity;
+		ProcessPendingCorrection();
 
-		if (!IsOnFloor())
+		var intent = ReadInput();
+
+		Vector3 rot = Rotation;
+		rot.Y = Mathf.RotateToward(rot.Y, intent.Yaw, TurnSpeed * (float)delta);
+		Rotation = rot;
+
+		ApplyMovement(intent);
+
+		if (_serverReady)
 		{
-			velocity += GetGravity() * (float)delta;
+			_inputBuffer[_tick % InputBufferSize] = intent;
+			_positionBuffer[_tick % InputBufferSize] = GlobalPosition;
+			_tick++;
+			IntentEmitted?.Invoke(intent);
 		}
+	}
 
-		bool jumpPressed = Input.IsActionJustPressed("ui_accept") && IsOnFloor();
-		if (jumpPressed)
-		{
-			velocity.Y = JumpVelocity;
-		}
-
+	private PlayerIntent ReadInput()
+	{
 		bool leftHeld = Input.IsMouseButtonPressed(MouseButton.Left);
 		bool rightHeld = Input.IsMouseButtonPressed(MouseButton.Right);
 
@@ -77,8 +88,6 @@ public partial class Player : CharacterBody3D
 		if (inputDir != Vector2.Zero)
 		{
 			Vector3 direction = (_cameraPivot.Basis * new Vector3(inputDir.X, 0, inputDir.Y)).Normalized();
-			velocity.X = direction.X * Speed;
-			velocity.Z = direction.Z * Speed;
 			moveX = direction.X;
 			moveZ = direction.Z;
 
@@ -87,46 +96,85 @@ public partial class Player : CharacterBody3D
 				yaw = Mathf.Atan2(direction.X, direction.Z);
 			}
 		}
-		else if (IsOnFloor())
-		{
-			velocity.X = 0;
-			velocity.Z = 0;
-		}
 
 		if (rightHeld)
 		{
 			yaw = _cameraPivot.Rotation.Y + Mathf.Pi;
 		}
 
-		Vector3 rot = Rotation;
-		rot.Y = Mathf.RotateToward(rot.Y, yaw, TurnSpeed * (float)delta);
-		Rotation = rot;
+		return new PlayerIntent
+		{
+			Tick = _tick,
+			MoveX = moveX,
+			MoveZ = moveZ,
+			Yaw = yaw,
+			Jump = Input.IsActionJustPressed("ui_accept") && IsOnFloor(),
+		};
+	}
+
+	private void ApplyMovement(PlayerIntent intent)
+	{
+		Vector3 velocity = Velocity;
+
+		if (!IsOnFloor())
+		{
+			velocity += GetGravity() * (1.0f / 30.0f);
+		}
+
+		if (intent.Jump && IsOnFloor())
+		{
+			velocity.Y = JumpVelocity;
+		}
+
+		if (intent.MoveX != 0 || intent.MoveZ != 0)
+		{
+			velocity.X = intent.MoveX * Speed;
+			velocity.Z = intent.MoveZ * Speed;
+		}
+		else if (IsOnFloor())
+		{
+			velocity.X = 0;
+			velocity.Z = 0;
+		}
 
 		Velocity = velocity;
 		MoveAndSlide();
-
-		bool dirty = moveX != _lastMoveX || moveZ != _lastMoveZ || yaw != _lastYaw || jumpPressed != _lastJump;
-		if (dirty)
-		{
-			_lastMoveX = moveX;
-			_lastMoveZ = moveZ;
-			_lastYaw = yaw;
-			_lastJump = jumpPressed;
-
-			IntentEmitted?.Invoke(new PlayerIntent
-			{
-				Tick = _tick++,
-				MoveX = moveX,
-				MoveZ = moveZ,
-				Yaw = yaw,
-				Jump = jumpPressed,
-			});
-		}
 	}
 
-	public void ApplyServerPosition(Vector3 position)
+	public void ApplyServerCorrection(Vector3 serverPosition, int serverTick)
 	{
-		GlobalPosition = position;
+		if (!_serverReady)
+		{
+			_serverReady = true;
+			GlobalPosition = serverPosition;
+			return;
+		}
+		_pendingCorrectionPos = serverPosition;
+		_pendingCorrectionTick = serverTick;
+	}
+
+	private void ProcessPendingCorrection()
+	{
+		if (_pendingCorrectionPos is not { } serverPosition)
+			return;
+
+		int serverTick = _pendingCorrectionTick;
+		_pendingCorrectionPos = null;
+
+		Vector3 predicted = _positionBuffer[serverTick % InputBufferSize];
+
+		float error = predicted.DistanceTo(serverPosition);
+		if (error < ReconciliationThreshold)
+			return;
+
+		GD.Print($"Correction at tick {serverTick}: error={error:F3}, server={serverPosition}, predicted={predicted}");
+		GlobalPosition = serverPosition;
+
+		for (int t = serverTick + 1; t < _tick; t++)
+		{
+			ApplyMovement(_inputBuffer[t % InputBufferSize]);
+			_positionBuffer[t % InputBufferSize] = GlobalPosition;
+		}
 	}
 
 	public override void _Process(double delta)
@@ -181,7 +229,6 @@ public partial class Player : CharacterBody3D
 				pivotRot.Y += -mouseMotion.Relative.X * MouseSensitivity;
 				_cameraPivot.Rotation = pivotRot;
 			}
-
 		}
 		else if (@event is InputEventMouseButton mouseButton)
 		{

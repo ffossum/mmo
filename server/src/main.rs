@@ -1,17 +1,17 @@
 mod network;
 mod physics;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
-use network::{Network, PlayerId, PlayerPosition, ServerEvent};
+use network::{Network, PlayerId, PlayerIntent, PlayerPosition, ServerEvent};
 use physics::{PhysicsWorld, PlayerBody};
 
 struct PlayerState {
     body: PlayerBody,
     yaw: f32,
-    move_x: f32,
-    move_z: f32,
+    input_queue: VecDeque<PlayerIntent>,
+    last_tick: i32,
 }
 
 const COLLISION_MESH_PATH: &str = "../shared/collision.glb";
@@ -41,8 +41,8 @@ fn main() -> anyhow::Result<()> {
                     PlayerState {
                         body,
                         yaw: 0.0,
-                        move_x: 0.0,
-                        move_z: 0.0,
+                        input_queue: VecDeque::new(),
+                        last_tick: 0,
                     },
                 );
             }
@@ -53,9 +53,13 @@ fn main() -> anyhow::Result<()> {
             }
             ServerEvent::PlayerInput(id, intent) => {
                 if let Some(state) = players.get_mut(&id) {
-                    state.yaw = intent.yaw;
-                    state.move_x = intent.move_x;
-                    state.move_z = intent.move_z;
+                    let newest = state.input_queue.back()
+                        .map(|i| i.tick)
+                        .unwrap_or(state.last_tick);
+                    if intent.tick > newest {
+                        state.yaw = intent.yaw;
+                        state.input_queue.push_back(intent);
+                    }
                 }
             }
             ServerEvent::None => {}
@@ -65,7 +69,13 @@ fn main() -> anyhow::Result<()> {
             last_tick += tick_rate;
 
             for state in players.values_mut() {
-                physics.update_player(&mut state.body, state.move_x, state.move_z);
+                let (move_x, move_z) = if let Some(input) = state.input_queue.pop_front() {
+                    state.last_tick = input.tick;
+                    (input.move_x, input.move_z)
+                } else {
+                    (0.0, 0.0)
+                };
+                physics.update_player(&mut state.body, move_x, move_z);
             }
             physics.tick();
 
@@ -77,6 +87,7 @@ fn main() -> anyhow::Result<()> {
                             x: pos[0],
                             y: pos[1],
                             z: pos[2],
+                            last_tick: state.last_tick,
                         },
                     );
                 }

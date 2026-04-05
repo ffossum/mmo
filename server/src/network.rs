@@ -27,6 +27,7 @@ pub struct PlayerPosition {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+    pub last_tick: i32,
 }
 
 pub struct Network {

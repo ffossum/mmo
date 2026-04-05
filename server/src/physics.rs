@@ -7,6 +7,7 @@ use rapier3d::prelude::*;
 // Rapier's capsule_y half_height is half the segment length (excluding hemispheres)
 const PLAYER_HALF_HEIGHT: f32 = 0.7;
 const PLAYER_RADIUS: f32 = 0.2;
+const COLLIDER_OFFSET: f32 = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
 
 pub struct PlayerBody {
     body_handle: RigidBodyHandle,
@@ -125,14 +126,9 @@ impl PhysicsWorld {
         let body_handle = self.rigid_body_set.insert(
             RigidBodyBuilder::kinematic_position_based().translation(vector![0.0, 2.0, 0.0]),
         );
-        // Offset collider so body position = feet (matching Godot's CharacterBody3D convention)
-        let collider_offset = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
         self.collider_set.insert_with_parent(
-            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS).translation(vector![
-                0.0,
-                collider_offset,
-                0.0
-            ]),
+            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS)
+                .translation(vector![0.0, COLLIDER_OFFSET, 0.0]),
             body_handle,
             &mut self.rigid_body_set,
         );
@@ -168,10 +164,8 @@ impl PhysicsWorld {
             move_z * speed * self.dt
         ];
 
-        // Offset shape position to match the collider offset (body origin = feet)
-        let collider_offset = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
         let mut shape_pos = *body.position();
-        shape_pos.translation.y += collider_offset;
+        shape_pos.translation.y += COLLIDER_OFFSET;
 
         let movement = self.character_controller.move_shape(
             self.dt,

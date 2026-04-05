@@ -61,10 +61,15 @@ for the developer.
     server position. No smoothing or prediction yet; this will feel choppy but
     proves the authority model works.
 
-1.  [ ] **Client-side prediction and server reconciliation.**
+1.  [x] **Client-side prediction and server reconciliation.**
 
     Use client-side prediction and server reconciliation to eliminate the choppy
-    movement from the previous step.
+    movement from the previous step. The client predicts movement locally every
+    physics tick, stores input and position history in a ring buffer, and sends
+    every input with a tick number. The server tags position responses with the
+    last-processed tick. On receiving a server correction, the client compares
+    its predicted position at that tick — if they diverge beyond a threshold,
+    it snaps to the server position and replays all unconfirmed inputs.
 
 1.  [ ] **Broadcast player states to all clients.**
 
