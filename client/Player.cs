@@ -164,9 +164,11 @@ public partial class Player : CharacterBody3D
 
 		Vector3 predicted = _positionBuffer[serverTick % InputBufferSize];
 
-		if (predicted.DistanceTo(serverPosition) < ReconciliationThreshold)
+		float error = predicted.DistanceTo(serverPosition);
+		if (error < ReconciliationThreshold)
 			return;
 
+		GD.Print($"Correction at tick {serverTick}: error={error:F3}, server={serverPosition}, predicted={predicted}");
 		GlobalPosition = serverPosition;
 
 		for (int t = serverTick + 1; t < _tick; t++)

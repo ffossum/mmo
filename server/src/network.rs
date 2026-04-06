@@ -18,7 +18,7 @@ pub struct PlayerIntent {
 pub enum ServerEvent {
     PlayerConnected(PlayerId),
     PlayerDisconnected(PlayerId),
-    PlayerInput(PlayerId, PlayerIntent),
+    PlayerInput(PlayerId, Vec<PlayerIntent>),
     None,
 }
 
@@ -88,8 +88,8 @@ impl Network {
                 let data = packet.data();
 
                 if channel_id == 1 {
-                    match serde_json::from_slice::<PlayerIntent>(data) {
-                        Ok(intent) => Ok(ServerEvent::PlayerInput(id, intent)),
+                    match serde_json::from_slice::<Vec<PlayerIntent>>(data) {
+                        Ok(intents) => Ok(ServerEvent::PlayerInput(id, intents)),
                         Err(e) => {
                             eprintln!("Failed to parse PlayerIntent from player {}: {}", id, e);
                             Ok(ServerEvent::None)

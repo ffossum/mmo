@@ -68,8 +68,17 @@ for the developer.
     physics tick, stores input and position history in a ring buffer, and sends
     every input with a tick number. The server tags position responses with the
     last-processed tick. On receiving a server correction, the client compares
-    its predicted position at that tick — if they diverge beyond a threshold,
-    it snaps to the server position and replays all unconfirmed inputs.
+    its predicted position at that tick — if they diverge beyond a threshold, it
+    snaps to the server position and replays all unconfirmed inputs.
+
+1.  [x] **Input redundancy in player intent packets.**
+
+    Each input packet currently contains a single tick's input. If that packet
+    is lost (inputs are sent unreliably), the server substitutes idle input and
+    the player hitches for a tick. Bundle the last 3 inputs in every packet so
+    the server can recover from up to 2 consecutive packet losses. The server
+    already rejects out-of-order and duplicate inputs (`intent.tick > newest`),
+    so redundant inputs are naturally ignored.
 
 1.  [ ] **Broadcast player states to all clients.**
 

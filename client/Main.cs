@@ -1,4 +1,5 @@
 using Godot;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 
@@ -18,6 +19,8 @@ public partial class Main : Node3D
 	private Player _player;
 	private const string ServerHost = "172.18.186.168";
 	private const int ServerPort = 9001;
+	private const int RedundantInputCount = 3;
+	private readonly Queue<PlayerIntent> _recentIntents = new();
 
 	public override void _Ready()
 	{
@@ -91,7 +94,11 @@ public partial class Main : Node3D
 	{
 		if (!_connected || _serverPeer == null) return;
 
-		string json = JsonSerializer.Serialize(intent);
+		_recentIntents.Enqueue(intent);
+		while (_recentIntents.Count > RedundantInputCount)
+			_recentIntents.Dequeue();
+
+		string json = JsonSerializer.Serialize(_recentIntents.ToArray());
 		byte[] data = Encoding.UTF8.GetBytes(json);
 		_serverPeer.Send(1, data, 0);
 		ServiceENet();

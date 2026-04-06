@@ -42,16 +42,18 @@ fn handle_event(
             }
             Ok(true)
         }
-        ServerEvent::PlayerInput(id, intent) => {
+        ServerEvent::PlayerInput(id, intents) => {
             if let Some(state) = players.get_mut(&id) {
-                let newest = state
-                    .input_queue
-                    .back()
-                    .map(|i| i.tick)
-                    .unwrap_or(state.last_tick);
-                if intent.tick > newest {
-                    state.yaw = intent.yaw;
-                    state.input_queue.push_back(intent);
+                for intent in intents {
+                    let newest = state
+                        .input_queue
+                        .back()
+                        .map(|i| i.tick)
+                        .unwrap_or(state.last_tick);
+                    if intent.tick > newest {
+                        state.yaw = intent.yaw;
+                        state.input_queue.push_back(intent);
+                    }
                 }
             }
             Ok(true)
