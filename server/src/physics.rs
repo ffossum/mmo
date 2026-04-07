@@ -160,8 +160,15 @@ impl PhysicsWorld {
         };
 
         player.velocity.y += self.gravity.y * self.dt;
-        player.velocity.x = move_x * speed;
-        player.velocity.z = move_z * speed;
+
+        let horizontal = nalgebra::Vector2::new(move_x, move_z);
+        let clamped = if horizontal.norm() > 1.0 {
+            horizontal.normalize()
+        } else {
+            horizontal
+        };
+        player.velocity.x = clamped.x * speed;
+        player.velocity.z = clamped.y * speed;
 
         let desired = player.velocity * self.dt;
 
