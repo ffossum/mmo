@@ -37,8 +37,10 @@ public partial class Player : CharacterBody3D
 
 	private PlayerIntent[] _inputBuffer = new PlayerIntent[InputBufferSize];
 	private Vector3[] _positionBuffer = new Vector3[InputBufferSize];
+	private Vector3[] _velocityBuffer = new Vector3[InputBufferSize];
 
 	private Vector3? _pendingCorrectionPos;
+	private Vector3 _pendingCorrectionVel;
 	private int _pendingCorrectionTick;
 
 	public override void _Ready()
@@ -64,6 +66,7 @@ public partial class Player : CharacterBody3D
 		{
 			_inputBuffer[_tick % InputBufferSize] = intent;
 			_positionBuffer[_tick % InputBufferSize] = GlobalPosition;
+			_velocityBuffer[_tick % InputBufferSize] = Velocity;
 			_tick++;
 			IntentEmitted?.Invoke(intent);
 		}
@@ -141,16 +144,17 @@ public partial class Player : CharacterBody3D
 		MoveAndSlide();
 	}
 
-	public void ApplyServerCorrection(Vector3 serverPosition, int serverTick)
+	public void ApplyServerCorrection(Vector3 serverPosition, Vector3 serverVelocity, int serverTick)
 	{
 		if (!_serverReady)
 		{
 			_serverReady = true;
 			GlobalPosition = serverPosition;
-			Velocity = Vector3.Zero;
+			Velocity = serverVelocity;
 			return;
 		}
 		_pendingCorrectionPos = serverPosition;
+		_pendingCorrectionVel = serverVelocity;
 		_pendingCorrectionTick = serverTick;
 	}
 
@@ -170,11 +174,13 @@ public partial class Player : CharacterBody3D
 
 		GD.Print($"Correction at tick {serverTick}: error={error:F3}, server={serverPosition}, predicted={predicted}");
 		GlobalPosition = serverPosition;
+		Velocity = _pendingCorrectionVel;
 
 		for (int t = serverTick + 1; t < _tick; t++)
 		{
 			ApplyMovement(_inputBuffer[t % InputBufferSize]);
 			_positionBuffer[t % InputBufferSize] = GlobalPosition;
+			_velocityBuffer[t % InputBufferSize] = Velocity;
 		}
 	}
 

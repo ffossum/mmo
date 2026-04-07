@@ -11,7 +11,7 @@ const COLLIDER_OFFSET: f32 = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
 
 pub struct PlayerBody {
     body_handle: RigidBodyHandle,
-    velocity_y: f32,
+    velocity: Vector<f32>,
 }
 
 pub struct PhysicsWorld {
@@ -127,14 +127,17 @@ impl PhysicsWorld {
             RigidBodyBuilder::kinematic_position_based().translation(vector![0.0, 2.0, 0.0]),
         );
         self.collider_set.insert_with_parent(
-            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS)
-                .translation(vector![0.0, COLLIDER_OFFSET, 0.0]),
+            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS).translation(vector![
+                0.0,
+                COLLIDER_OFFSET,
+                0.0
+            ]),
             body_handle,
             &mut self.rigid_body_set,
         );
         PlayerBody {
             body_handle,
-            velocity_y: 0.0,
+            velocity: vector![0.0, 0.0, 0.0],
         }
     }
 
@@ -156,13 +159,11 @@ impl PhysicsWorld {
             return;
         };
 
-        player.velocity_y += self.gravity.y * self.dt;
+        player.velocity.y += self.gravity.y * self.dt;
+        player.velocity.x = move_x * speed;
+        player.velocity.z = move_z * speed;
 
-        let desired = vector![
-            move_x * speed * self.dt,
-            player.velocity_y * self.dt,
-            move_z * speed * self.dt
-        ];
+        let desired = player.velocity * self.dt;
 
         let mut shape_pos = *body.position();
         shape_pos.translation.y += COLLIDER_OFFSET;
@@ -180,7 +181,7 @@ impl PhysicsWorld {
         );
 
         if movement.grounded {
-            player.velocity_y = 0.0;
+            player.velocity.y = 0.0;
         }
 
         if let Some(body) = self.rigid_body_set.get_mut(player.body_handle) {
@@ -216,5 +217,9 @@ impl PhysicsWorld {
             let pos = body.translation();
             [pos.x, pos.y, pos.z]
         })
+    }
+
+    pub fn get_velocity(&self, player: &PlayerBody) -> [f32; 3] {
+        [player.velocity.x, player.velocity.y, player.velocity.z]
     }
 }

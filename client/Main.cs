@@ -8,6 +8,9 @@ public readonly struct ServerPosition
 	[System.Text.Json.Serialization.JsonPropertyName("x")] public float X { get; init; }
 	[System.Text.Json.Serialization.JsonPropertyName("y")] public float Y { get; init; }
 	[System.Text.Json.Serialization.JsonPropertyName("z")] public float Z { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("velocity_x")] public float VelocityX { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("velocity_y")] public float VelocityY { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("velocity_z")] public float VelocityZ { get; init; }
 	[System.Text.Json.Serialization.JsonPropertyName("last_tick")] public int LastTick { get; init; }
 }
 
@@ -81,7 +84,10 @@ public partial class Main : Node3D
 					{
 						string json = Encoding.UTF8.GetString(packet);
 						var pos = JsonSerializer.Deserialize<ServerPosition>(json);
-						_player.ApplyServerCorrection(new Vector3(pos.X, pos.Y, pos.Z), pos.LastTick);
+						_player.ApplyServerCorrection(
+							new Vector3(pos.X, pos.Y, pos.Z),
+							new Vector3(pos.VelocityX, pos.VelocityY, pos.VelocityZ),
+							pos.LastTick);
 					}
 					break;
 			}

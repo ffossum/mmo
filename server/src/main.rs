@@ -102,12 +102,16 @@ fn main() -> anyhow::Result<()> {
 
             for (&id, state) in &players {
                 if let Some(pos) = physics.get_position(&state.body) {
+                    let vel = physics.get_velocity(&state.body);
                     network.send_position(
                         id,
                         &PlayerPosition {
                             x: pos[0],
                             y: pos[1],
                             z: pos[2],
+                            velocity_x: vel[0],
+                            velocity_y: vel[1],
+                            velocity_z: vel[2],
                             last_tick: state.last_tick,
                         },
                     );

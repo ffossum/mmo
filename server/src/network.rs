@@ -27,6 +27,9 @@ pub struct PlayerPosition {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub velocity_z: f32,
     pub last_tick: i32,
 }
 
