@@ -90,13 +90,20 @@ fn main() -> anyhow::Result<()> {
             last_tick += tick_rate;
 
             for state in players.values_mut() {
-                let (move_x, move_z) = if let Some(input) = state.input_queue.pop_front() {
+                let (move_x, move_z, jump) = if let Some(input) = state.input_queue.pop_front() {
                     state.last_tick = input.tick;
-                    (input.move_x, input.move_z)
+                    (input.move_x, input.move_z, input.jump)
                 } else {
-                    (0.0, 0.0)
+                    (0.0, 0.0, false)
                 };
-                physics.update_player(&mut state.body, move_x, move_z);
+                if jump {
+                    let pos = physics.get_position(&state.body).unwrap_or([0.0; 3]);
+                    println!(
+                        "Jump intent at tick {}: grounded={}, y={:.4}, queue_remaining={}",
+                        state.last_tick, state.body.is_grounded(), pos[1], state.input_queue.len()
+                    );
+                }
+                physics.update_player(&mut state.body, move_x, move_z, jump);
             }
             physics.tick();
 

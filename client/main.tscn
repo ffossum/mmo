@@ -16,6 +16,12 @@ sky = SubResource("Sky_tlwt5")
 tonemap_mode = 2
 glow_enabled = true
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
+albedo_color = Color(0.63529414, 1, 0.9098039, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_h2yge"]
+albedo_color = Color(1, 1, 0.29411766, 1)
+
 [node name="Main" type="Node3D" unique_id=1163741665]
 script = ExtResource("1_0xm2m")
 
@@ -40,3 +46,10 @@ transform = Transform3D(1.9066614, 0, 0, 0, 1, 0, 0, 0, 1.9066614, -3.522715, 1,
 use_collision = true
 collision_layer = 3
 sides = 12
+material = SubResource("StandardMaterial3D_0xm2m")
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1318641316]
+transform = Transform3D(1.5148128, -0.13600732, 5.482539, 1.7667832e-08, 0.9888629, 0.9029235, -3.409368, -0.06042926, 2.43594, 5.085976, -0.1289526, 0.40717208)
+use_collision = true
+collision_layer = 3
+material = SubResource("StandardMaterial3D_h2yge")

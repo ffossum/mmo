@@ -1,6 +1,7 @@
 use anyhow::Context;
 use nalgebra::{Matrix4, Point3};
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
+use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
 
 // Matches client CapsuleShape3D: height=1.8, radius=0.2
@@ -12,6 +13,13 @@ const COLLIDER_OFFSET: f32 = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
 pub struct PlayerBody {
     body_handle: RigidBodyHandle,
     velocity_y: f32,
+    grounded: bool,
+}
+
+impl PlayerBody {
+    pub fn is_grounded(&self) -> bool {
+        self.grounded
+    }
 }
 
 pub struct PhysicsWorld {
@@ -47,6 +55,7 @@ impl PhysicsWorld {
             ccd_solver: CCDSolver::new(),
             query_pipeline: QueryPipeline::new(),
             character_controller: KinematicCharacterController {
+                offset: CharacterLength::Absolute(0.0),
                 snap_to_ground: Some(CharacterLength::Absolute(0.1)),
                 ..Default::default()
             },
@@ -135,6 +144,7 @@ impl PhysicsWorld {
         PlayerBody {
             body_handle,
             velocity_y: 0.0,
+            grounded: false,
         }
     }
 
@@ -149,14 +159,47 @@ impl PhysicsWorld {
         );
     }
 
-    pub fn update_player(&mut self, player: &mut PlayerBody, move_x: f32, move_z: f32) {
+    pub fn is_player_grounded(&self, player: &PlayerBody) -> bool {
+        let Some(body) = self.rigid_body_set.get(player.body_handle) else {
+            return false;
+        };
+
+        let mut shape_pos = *body.position();
+        shape_pos.translation.y += COLLIDER_OFFSET;
+
+        let cast_dir = vector![0.0, -1.0, 0.0];
+        let max_dist = 0.02;
+
+        self.query_pipeline
+            .cast_shape(
+                &self.rigid_body_set,
+                &self.collider_set,
+                &shape_pos,
+                &cast_dir,
+                self.character_shape.as_ref(),
+                ShapeCastOptions {
+                    max_time_of_impact: max_dist,
+                    ..Default::default()
+                },
+                QueryFilter::default().exclude_rigid_body(player.body_handle),
+            )
+            .is_some()
+    }
+
+    pub fn update_player(&mut self, player: &mut PlayerBody, move_x: f32, move_z: f32, jump: bool) {
         let speed = 5.0_f32;
+        let jump_velocity = 4.5_f32;
 
         let Some(body) = self.rigid_body_set.get(player.body_handle) else {
             return;
         };
 
         player.velocity_y += self.gravity.y * self.dt;
+
+        let can_jump = player.grounded || self.is_player_grounded(player);
+        if jump && can_jump {
+            player.velocity_y = jump_velocity;
+        }
 
         let desired = vector![
             move_x * speed * self.dt,
@@ -166,6 +209,12 @@ impl PhysicsWorld {
 
         let mut shape_pos = *body.position();
         shape_pos.translation.y += COLLIDER_OFFSET;
+
+        if player.velocity_y > 0.0 {
+            self.character_controller.snap_to_ground = None;
+        } else {
+            self.character_controller.snap_to_ground = Some(CharacterLength::Absolute(0.1));
+        }
 
         let movement = self.character_controller.move_shape(
             self.dt,
@@ -179,6 +228,7 @@ impl PhysicsWorld {
             |_| {},
         );
 
+        player.grounded = movement.grounded;
         if movement.grounded {
             player.velocity_y = 0.0;
         }
