@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
 	private const float TurnSpeed = 15.0f;
 	private const float JumpVelocity = 4.5f;
 	private const int InputBufferSize = 128;
-	private const float ReconciliationThreshold = 0.05f;
+	private const float ReconciliationThreshold = 0.1f;
 
 	private Node3D _cameraPivot;
 	private SpringArm3D _cameraArm;
@@ -116,7 +116,10 @@ public partial class Player : CharacterBody3D
 	{
 		Vector3 velocity = Velocity;
 
-		velocity += GetGravity() / Engine.PhysicsTicksPerSecond;
+		if (!IsOnFloor())
+		{
+			velocity += GetGravity() * (1.0f / 30.0f);
+		}
 
 		if (intent.Jump && IsOnFloor())
 		{
@@ -162,18 +165,16 @@ public partial class Player : CharacterBody3D
 		Vector3 predicted = _positionBuffer[serverTick % InputBufferSize];
 
 		float error = predicted.DistanceTo(serverPosition);
+		if (error < ReconciliationThreshold)
+			return;
 
-		if (error > ReconciliationThreshold)
+		GD.Print($"Correction at tick {serverTick}: error={error:F3}, server={serverPosition}, predicted={predicted}");
+		GlobalPosition = serverPosition;
+
+		for (int t = serverTick + 1; t < _tick; t++)
 		{
-			Vector3 diff = serverPosition - predicted;
-			GD.Print($"Correction at tick {serverTick}: error={error:F4}, dx={diff.X:F4}, dy={diff.Y:F4}, dz={diff.Z:F4}");
-
-			GlobalPosition = serverPosition;
-			for (int t = serverTick + 1; t < _tick; t++)
-			{
-				ApplyMovement(_inputBuffer[t % InputBufferSize]);
-				_positionBuffer[t % InputBufferSize] = GlobalPosition;
-			}
+			ApplyMovement(_inputBuffer[t % InputBufferSize]);
+			_positionBuffer[t % InputBufferSize] = GlobalPosition;
 		}
 	}
 

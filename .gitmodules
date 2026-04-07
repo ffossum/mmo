@@ -1,3 +1,0 @@
-[submodule "server/crates/jolt-sys/vendor/joltc"]
-	path = server/crates/jolt-sys/vendor/joltc
-	url = https://github.com/amerkoleci/joltc.git

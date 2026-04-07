@@ -80,26 +80,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bindgen"
-version = "0.71.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
-dependencies = [
- "bitflags 2.10.0",
- "cexpr",
- "clang-sys",
- "itertools",
- "log",
- "prettyplease",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash 2.1.2",
- "shlex",
- "syn",
-]
-
-[[package]]
 name = "bit-vec"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -282,7 +262,7 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4580f5cb34ba20a73d05e26876f05fd3830a8959fb594b1ecb4d9ddac2eec77"
 dependencies = [
- "bindgen 0.65.1",
+ "bindgen",
  "cmake",
 ]
 
@@ -439,34 +419,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 
 [[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
-
-[[package]]
-name = "jolt"
-version = "0.1.0"
-dependencies = [
- "jolt-sys",
-]
-
-[[package]]
-name = "jolt-sys"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.71.1",
- "cmake",
-]
 
 [[package]]
 name = "lazy_static"
@@ -553,7 +509,6 @@ dependencies = [
  "anyhow",
  "enet",
  "gltf",
- "jolt",
  "rapier3d",
  "serde",
  "serde_json",
