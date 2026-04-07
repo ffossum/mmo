@@ -65,7 +65,10 @@ fn handle_event(
 }
 
 fn main() -> anyhow::Result<()> {
-    let mut physics = PhysicsWorld::new();
+    let dt = 1.0_f32 / 30.0_f32;
+    let tick_duration = Duration::from_secs_f32(dt);
+
+    let mut physics = PhysicsWorld::new(dt);
     let count = physics.load_collision(COLLISION_MESH_PATH)?;
     println!(
         "Loaded {} collision mesh(es) from {}",
@@ -77,16 +80,19 @@ fn main() -> anyhow::Result<()> {
 
     let mut players: HashMap<PlayerId, PlayerState> = HashMap::new();
 
-    let tick_rate = Duration::from_secs_f64(1.0 / 30.0);
     let mut last_tick = Instant::now();
 
     loop {
-        while last_tick.elapsed() < tick_rate {
-            let timeout_ms = tick_rate.saturating_sub(last_tick.elapsed()).as_millis() as u32;
+        // Handle all events within the tick
+        while last_tick.elapsed() < tick_duration {
+            let timeout_ms = tick_duration
+                .saturating_sub(last_tick.elapsed())
+                .as_millis() as u32;
             handle_event(&mut network, &mut physics, &mut players, timeout_ms)?;
         }
-        last_tick += tick_rate;
+        last_tick += tick_duration;
 
+        // Move physics simulation one step forward
         for state in players.values_mut() {
             if let Some(input) = state.input_queue.pop_front() {
                 state.last_tick = input.tick;
@@ -97,6 +103,7 @@ fn main() -> anyhow::Result<()> {
         }
         physics.tick();
 
+        // Send state to clients
         for (&id, state) in &players {
             if let Some(pos) = physics.get_position(&state.body) {
                 let vel = physics.get_velocity(&state.body);
