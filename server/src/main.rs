@@ -12,6 +12,7 @@ struct PlayerState {
     yaw: f32,
     input_queue: VecDeque<PlayerIntent>,
     last_tick: i32,
+    last_input: (f32, f32),
 }
 
 const COLLISION_MESH_PATH: &str = "../shared/collision.glb";
@@ -32,6 +33,7 @@ fn handle_event(
                     yaw: 0.0,
                     input_queue: VecDeque::new(),
                     last_tick: 0,
+                    last_input: (0.0, 0.0),
                 },
             );
             Ok(true)
@@ -79,43 +81,37 @@ fn main() -> anyhow::Result<()> {
     let mut last_tick = Instant::now();
 
     loop {
-        let remaining = tick_rate.saturating_sub(last_tick.elapsed());
-        let timeout_ms = remaining.as_millis() as u32;
-        handle_event(&mut network, &mut physics, &mut players, timeout_ms)?;
+        while last_tick.elapsed() < tick_rate {
+            let timeout_ms = tick_rate.saturating_sub(last_tick.elapsed()).as_millis() as u32;
+            handle_event(&mut network, &mut physics, &mut players, timeout_ms)?;
+        }
+        last_tick += tick_rate;
 
-        if last_tick.elapsed() >= tick_rate {
-            // Drain all pending events before physics tick
-            while handle_event(&mut network, &mut physics, &mut players, 0)? {}
-
-            last_tick += tick_rate;
-
-            for state in players.values_mut() {
-                let (move_x, move_z) = if let Some(input) = state.input_queue.pop_front() {
-                    state.last_tick = input.tick;
-                    (input.move_x, input.move_z)
-                } else {
-                    (0.0, 0.0)
-                };
-                physics.update_player(&mut state.body, move_x, move_z);
+        for state in players.values_mut() {
+            if let Some(input) = state.input_queue.pop_front() {
+                state.last_tick = input.tick;
+                state.last_input = (input.move_x, input.move_z);
             }
-            physics.tick();
+            let (move_x, move_z) = state.last_input;
+            physics.update_player(&mut state.body, move_x, move_z);
+        }
+        physics.tick();
 
-            for (&id, state) in &players {
-                if let Some(pos) = physics.get_position(&state.body) {
-                    let vel = physics.get_velocity(&state.body);
-                    network.send_position(
-                        id,
-                        &PlayerPosition {
-                            x: pos[0],
-                            y: pos[1],
-                            z: pos[2],
-                            velocity_x: vel[0],
-                            velocity_y: vel[1],
-                            velocity_z: vel[2],
-                            last_tick: state.last_tick,
-                        },
-                    );
-                }
+        for (&id, state) in &players {
+            if let Some(pos) = physics.get_position(&state.body) {
+                let vel = physics.get_velocity(&state.body);
+                network.send_position(
+                    id,
+                    &PlayerPosition {
+                        x: pos[0],
+                        y: pos[1],
+                        z: pos[2],
+                        velocity_x: vel[0],
+                        velocity_y: vel[1],
+                        velocity_z: vel[2],
+                        last_tick: state.last_tick,
+                    },
+                );
             }
         }
     }
