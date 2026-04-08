@@ -94,13 +94,13 @@ fn main() -> anyhow::Result<()> {
 
         // Move physics simulation one step forward
         for state in players.values_mut() {
-            let (move_x, move_z) = if let Some(input) = state.input_queue.pop_front() {
+            let (move_x, move_z, jump) = if let Some(input) = state.input_queue.pop_front() {
                 state.last_client_tick = input.tick;
-                (input.move_x, input.move_z)
+                (input.move_x, input.move_z, input.jump)
             } else {
-                (0.0, 0.0)
+                (0.0, 0.0, false)
             };
-            physics.update_player(&mut state.body, move_x, move_z);
+            physics.update_player(&mut state.body, move_x, move_z, jump);
         }
         physics.tick();
 

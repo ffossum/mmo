@@ -13,6 +13,7 @@ const COLLIDER_OFFSET: f32 = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
 pub struct PlayerBody {
     body_handle: RigidBodyHandle,
     velocity: Vector,
+    grounded: bool,
 }
 
 pub struct PhysicsWorld {
@@ -138,6 +139,7 @@ impl PhysicsWorld {
         PlayerBody {
             body_handle,
             velocity: Vec3::ZERO,
+            grounded: false,
         }
     }
 
@@ -152,14 +154,21 @@ impl PhysicsWorld {
         );
     }
 
-    pub fn update_player(&mut self, player: &mut PlayerBody, move_x: f32, move_z: f32) {
+    pub fn update_player(&mut self, player: &mut PlayerBody, move_x: f32, move_z: f32, jump: bool) {
         let speed = 5.0_f32;
+        let jump_speed = 4.5_f32;
 
         let Some(body) = self.rigid_body_set.get(player.body_handle) else {
             return;
         };
 
-        player.velocity.y += self.gravity.y * self.dt;
+        if !player.grounded {
+            player.velocity.y += self.gravity.y * self.dt;
+        }
+
+        if jump && player.grounded {
+            player.velocity.y = jump_speed;
+        }
 
         let horizontal = nalgebra::Vector2::new(move_x, move_z);
         let clamped = if horizontal.norm() > 1.0 {
@@ -167,8 +176,13 @@ impl PhysicsWorld {
         } else {
             horizontal
         };
-        player.velocity.x = clamped.x * speed;
-        player.velocity.z = clamped.y * speed;
+        if move_x != 0.0 || move_z != 0.0 {
+            player.velocity.x = clamped.x * speed;
+            player.velocity.z = clamped.y * speed;
+        } else if player.grounded {
+            player.velocity.x = 0.0;
+            player.velocity.z = 0.0;
+        }
 
         let desired = player.velocity * self.dt;
 
@@ -190,7 +204,8 @@ impl PhysicsWorld {
             |_| {},
         );
 
-        if movement.grounded {
+        player.grounded = movement.grounded;
+        if player.grounded {
             player.velocity.y = 0.0;
         }
 

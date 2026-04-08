@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
 	private const float TurnSpeed = 15.0f;
 	private const float JumpVelocity = 4.5f;
 	private const int InputBufferSize = 128;
-	private const float ReconciliationThreshold = 0.02f;
+	private const float ReconciliationThreshold = 0.1f;
 
 	private Node3D _cameraPivot;
 	private SpringArm3D _cameraArm;
