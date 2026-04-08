@@ -117,17 +117,15 @@ impl Network {
         let data = json.as_bytes();
 
         for mut peer in self.host.peers() {
-            if peer.state() == PeerState::Connected {
-                if let Some(&id) = peer.data() {
-                    if id == player_id {
+            if peer.state() == PeerState::Connected
+                && let Some(&id) = peer.data()
+                    && id == player_id {
                         let _ = peer.send_packet(
                             Packet::new(data, PacketMode::UnreliableUnsequenced).unwrap(),
                             1,
                         );
                         break;
                     }
-                }
-            }
         }
     }
 }

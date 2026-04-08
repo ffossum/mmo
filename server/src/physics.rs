@@ -1,6 +1,7 @@
 use anyhow::Context;
 use nalgebra::{Matrix4, Point3};
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
+use rapier3d::parry::query::DefaultQueryDispatcher;
 use rapier3d::prelude::*;
 
 // Matches client CapsuleShape3D: height=1.8, radius=0.2
@@ -11,11 +12,11 @@ const COLLIDER_OFFSET: f32 = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
 
 pub struct PlayerBody {
     body_handle: RigidBodyHandle,
-    velocity: Vector<f32>,
+    velocity: Vector,
 }
 
 pub struct PhysicsWorld {
-    gravity: Vector<f32>,
+    gravity: Vector,
     dt: f32,
     pipeline: PhysicsPipeline,
     island_manager: IslandManager,
@@ -26,7 +27,6 @@ pub struct PhysicsWorld {
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    query_pipeline: QueryPipeline,
     character_controller: KinematicCharacterController,
     character_shape: SharedShape,
 }
@@ -34,8 +34,8 @@ pub struct PhysicsWorld {
 impl PhysicsWorld {
     pub fn new(dt: Real) -> Self {
         Self {
-            gravity: vector![0.0, -9.8, 0.0],
-            dt: dt,
+            gravity: Vec3::new(0.0, -9.8, 0.0),
+            dt,
             pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
             broad_phase: DefaultBroadPhase::new(),
@@ -45,7 +45,6 @@ impl PhysicsWorld {
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            query_pipeline: QueryPipeline::new(),
             character_controller: KinematicCharacterController {
                 offset: CharacterLength::Absolute(0.001),
                 snap_to_ground: Some(CharacterLength::Absolute(0.1)),
@@ -62,7 +61,7 @@ impl PhysicsWorld {
         let mut count = 0;
         for scene in doc.scenes() {
             for node in scene.nodes() {
-                count += self.load_node(&node, &buffers, &Matrix4::identity());
+                count += self.load_node(&node, &buffers, &Matrix4::identity())?;
             }
         }
 
@@ -74,7 +73,7 @@ impl PhysicsWorld {
         node: &gltf::Node,
         buffers: &[gltf::buffer::Data],
         parent_transform: &Matrix4<f32>,
-    ) -> usize {
+    ) -> anyhow::Result<usize> {
         let m = node.transform().matrix();
         let local = Matrix4::from_columns(&[m[0].into(), m[1].into(), m[2].into(), m[3].into()]);
         let global = parent_transform * local;
@@ -92,10 +91,10 @@ impl PhysicsWorld {
                     continue;
                 };
 
-                let vertices: Vec<Point<f32>> = positions
+                let vertices: Vec<Vector> = positions
                     .map(|p| {
                         let transformed = global.transform_point(&Point3::from(p));
-                        point![transformed.x, transformed.y, transformed.z]
+                        Vec3::new(transformed.x, transformed.y, transformed.z)
                     })
                     .collect();
 
@@ -108,7 +107,7 @@ impl PhysicsWorld {
 
                 let body = self.rigid_body_set.insert(RigidBodyBuilder::fixed());
                 self.collider_set.insert_with_parent(
-                    ColliderBuilder::trimesh(vertices, tri_indices),
+                    ColliderBuilder::trimesh(vertices, tri_indices)?,
                     body,
                     &mut self.rigid_body_set,
                 );
@@ -117,28 +116,28 @@ impl PhysicsWorld {
         }
 
         for child in node.children() {
-            count += self.load_node(&child, buffers, &global);
+            count += self.load_node(&child, buffers, &global)?;
         }
 
-        count
+        Ok(count)
     }
 
     pub fn add_player(&mut self) -> PlayerBody {
         let body_handle = self.rigid_body_set.insert(
-            RigidBodyBuilder::kinematic_position_based().translation(vector![0.0, 2.0, 0.0]),
+            RigidBodyBuilder::kinematic_position_based().translation(Vec3::new(0.0, 2.0, 0.0)),
         );
         self.collider_set.insert_with_parent(
-            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS).translation(vector![
+            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS).translation(Vec3::new(
                 0.0,
                 COLLIDER_OFFSET,
-                0.0
-            ]),
+                0.0,
+            )),
             body_handle,
             &mut self.rigid_body_set,
         );
         PlayerBody {
             body_handle,
-            velocity: vector![0.0, 0.0, 0.0],
+            velocity: Vec3::ZERO,
         }
     }
 
@@ -176,15 +175,18 @@ impl PhysicsWorld {
         let mut shape_pos = *body.position();
         shape_pos.translation.y += COLLIDER_OFFSET;
 
-        let movement = self.character_controller.move_shape(
-            self.dt,
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            &DefaultQueryDispatcher,
             &self.rigid_body_set,
             &self.collider_set,
-            &self.query_pipeline,
+            QueryFilter::default().exclude_rigid_body(player.body_handle),
+        );
+        let movement = self.character_controller.move_shape(
+            self.dt,
+            &query_pipeline,
             self.character_shape.as_ref(),
             &shape_pos,
             desired,
-            QueryFilter::default().exclude_rigid_body(player.body_handle),
             |_| {},
         );
 
@@ -193,15 +195,14 @@ impl PhysicsWorld {
         }
 
         if let Some(body) = self.rigid_body_set.get_mut(player.body_handle) {
-            let new_pos = body.position().translation.vector + movement.translation;
+            let new_pos = body.position().translation + movement.translation;
             body.set_next_kinematic_translation(new_pos);
         }
     }
 
     pub fn tick(&mut self) {
-        self.query_pipeline.update(&self.collider_set);
         self.pipeline.step(
-            &self.gravity,
+            self.gravity,
             &IntegrationParameters {
                 dt: self.dt,
                 ..Default::default()
@@ -214,7 +215,6 @@ impl PhysicsWorld {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            None,
             &(),
             &(),
         );
