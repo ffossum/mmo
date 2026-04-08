@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 
-public readonly struct ServerPosition
+public readonly struct ServerSnapshot
 {
 	[System.Text.Json.Serialization.JsonPropertyName("x")] public float X { get; init; }
 	[System.Text.Json.Serialization.JsonPropertyName("y")] public float Y { get; init; }
@@ -11,7 +11,8 @@ public readonly struct ServerPosition
 	[System.Text.Json.Serialization.JsonPropertyName("velocity_x")] public float VelocityX { get; init; }
 	[System.Text.Json.Serialization.JsonPropertyName("velocity_y")] public float VelocityY { get; init; }
 	[System.Text.Json.Serialization.JsonPropertyName("velocity_z")] public float VelocityZ { get; init; }
-	[System.Text.Json.Serialization.JsonPropertyName("last_tick")] public int LastTick { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("server_tick")] public int ServerTick { get; init; }
+	[System.Text.Json.Serialization.JsonPropertyName("last_client_tick")] public int LastClientTick { get; init; }
 }
 
 public partial class Main : Node3D
@@ -83,11 +84,11 @@ public partial class Main : Node3D
 					if (channel == 1)
 					{
 						string json = Encoding.UTF8.GetString(packet);
-						var pos = JsonSerializer.Deserialize<ServerPosition>(json);
+						var snapshot = JsonSerializer.Deserialize<ServerSnapshot>(json);
 						_player.ApplyServerCorrection(
-							new Vector3(pos.X, pos.Y, pos.Z),
-							new Vector3(pos.VelocityX, pos.VelocityY, pos.VelocityZ),
-							pos.LastTick);
+							new Vector3(snapshot.X, snapshot.Y, snapshot.Z),
+							new Vector3(snapshot.VelocityX, snapshot.VelocityY, snapshot.VelocityZ),
+							snapshot.LastClientTick);
 					}
 					break;
 			}

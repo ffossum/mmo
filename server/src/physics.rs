@@ -47,6 +47,7 @@ impl PhysicsWorld {
             ccd_solver: CCDSolver::new(),
             query_pipeline: QueryPipeline::new(),
             character_controller: KinematicCharacterController {
+                offset: CharacterLength::Absolute(0.001),
                 snap_to_ground: Some(CharacterLength::Absolute(0.1)),
                 ..Default::default()
             },

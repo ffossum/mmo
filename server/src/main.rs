@@ -4,15 +4,14 @@ mod physics;
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
-use network::{Network, PlayerId, PlayerIntent, PlayerPosition, ServerEvent};
+use network::{Network, PlayerId, PlayerIntent, PlayerSnapshot, ServerEvent};
 use physics::{PhysicsWorld, PlayerBody};
 
 struct PlayerState {
     body: PlayerBody,
     yaw: f32,
     input_queue: VecDeque<PlayerIntent>,
-    last_tick: i32,
-    last_input: (f32, f32),
+    last_client_tick: i32,
 }
 
 const COLLISION_MESH_PATH: &str = "../shared/collision.glb";
@@ -32,8 +31,7 @@ fn handle_event(
                     body,
                     yaw: 0.0,
                     input_queue: VecDeque::new(),
-                    last_tick: 0,
-                    last_input: (0.0, 0.0),
+                    last_client_tick: 0,
                 },
             );
             Ok(true)
@@ -51,7 +49,7 @@ fn handle_event(
                         .input_queue
                         .back()
                         .map(|i| i.tick)
-                        .unwrap_or(state.last_tick);
+                        .unwrap_or(state.last_client_tick);
                     if intent.tick > newest {
                         state.yaw = intent.yaw;
                         state.input_queue.push_back(intent);
@@ -80,25 +78,28 @@ fn main() -> anyhow::Result<()> {
 
     let mut players: HashMap<PlayerId, PlayerState> = HashMap::new();
 
-    let mut last_tick = Instant::now();
+    let mut last_tick_time = Instant::now();
+    let mut server_tick: i32 = 0;
 
     loop {
         // Handle all events within the tick
-        while last_tick.elapsed() < tick_duration {
+        while last_tick_time.elapsed() < tick_duration {
             let timeout_ms = tick_duration
-                .saturating_sub(last_tick.elapsed())
+                .saturating_sub(last_tick_time.elapsed())
                 .as_millis() as u32;
             handle_event(&mut network, &mut physics, &mut players, timeout_ms)?;
         }
-        last_tick += tick_duration;
+        last_tick_time += tick_duration;
+        server_tick += 1;
 
         // Move physics simulation one step forward
         for state in players.values_mut() {
-            if let Some(input) = state.input_queue.pop_front() {
-                state.last_tick = input.tick;
-                state.last_input = (input.move_x, input.move_z);
-            }
-            let (move_x, move_z) = state.last_input;
+            let (move_x, move_z) = if let Some(input) = state.input_queue.pop_front() {
+                state.last_client_tick = input.tick;
+                (input.move_x, input.move_z)
+            } else {
+                (0.0, 0.0)
+            };
             physics.update_player(&mut state.body, move_x, move_z);
         }
         physics.tick();
@@ -107,16 +108,17 @@ fn main() -> anyhow::Result<()> {
         for (&id, state) in &players {
             if let Some(pos) = physics.get_position(&state.body) {
                 let vel = physics.get_velocity(&state.body);
-                network.send_position(
+                network.send_snapshot(
                     id,
-                    &PlayerPosition {
+                    &PlayerSnapshot {
                         x: pos[0],
                         y: pos[1],
                         z: pos[2],
                         velocity_x: vel[0],
                         velocity_y: vel[1],
                         velocity_z: vel[2],
-                        last_tick: state.last_tick,
+                        server_tick,
+                        last_client_tick: state.last_client_tick,
                     },
                 );
             }

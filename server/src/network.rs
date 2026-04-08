@@ -23,14 +23,15 @@ pub enum ServerEvent {
 }
 
 #[derive(Serialize)]
-pub struct PlayerPosition {
+pub struct PlayerSnapshot {
     pub x: f32,
     pub y: f32,
     pub z: f32,
     pub velocity_x: f32,
     pub velocity_y: f32,
     pub velocity_z: f32,
-    pub last_tick: i32,
+    pub server_tick: i32,
+    pub last_client_tick: i32,
 }
 
 pub struct Network {
@@ -111,7 +112,7 @@ impl Network {
         }
     }
 
-    pub fn send_position(&mut self, player_id: PlayerId, pos: &PlayerPosition) {
+    pub fn send_snapshot(&mut self, player_id: PlayerId, pos: &PlayerSnapshot) {
         let json = serde_json::to_string(pos).unwrap();
         let data = json.as_bytes();
 
