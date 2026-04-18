@@ -1,248 +1,236 @@
-use anyhow::Context;
-use nalgebra::{Matrix4, Point3};
-use rapier3d::control::{CharacterLength, KinematicCharacterController};
-use rapier3d::parry::query::DefaultQueryDispatcher;
-use rapier3d::prelude::*;
+use std::collections::VecDeque;
 
-// Matches client CapsuleShape3D: height=1.8, radius=0.2
-// Rapier's capsule_y half_height is half the segment length (excluding hemispheres)
+use anyhow::Context;
+use bevy::math::Mat4;
+use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
+
+use crate::network::{PlayerId, PlayerIntent, PlayerSnapshot, SendSnapshot};
+
+/// Server tick rate. Must match the client's fixed timestep so reconciliation lines up.
+pub const TICK_HZ: f64 = 30.0;
+pub const FIXED_DT: f32 = 1.0 / TICK_HZ as f32;
+
+// Matches client CapsuleShape3D: height=1.8, radius=0.2.
 const PLAYER_HALF_HEIGHT: f32 = 0.7;
 const PLAYER_RADIUS: f32 = 0.2;
-const COLLIDER_OFFSET: f32 = PLAYER_HALF_HEIGHT + PLAYER_RADIUS;
 
-pub struct PlayerBody {
-    body_handle: RigidBodyHandle,
-    velocity: Vector,
-    grounded: bool,
+const PLAYER_SPEED: f32 = 5.0;
+const JUMP_SPEED: f32 = 4.5;
+const GRAVITY: f32 = -9.8;
+
+const COLLISION_MESH_PATH: &str = "../shared/collision.glb";
+
+#[derive(Resource, Default)]
+pub struct ServerTick(pub i32);
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Player(pub PlayerId);
+
+#[derive(Component, Default)]
+pub struct PlayerYaw(pub f32);
+
+#[derive(Component, Default)]
+pub struct PlayerVelocity(pub Vec3);
+
+#[derive(Component, Default)]
+pub struct PlayerInputBuffer {
+    pub queue: VecDeque<PlayerIntent>,
+    pub last_client_tick: i32,
 }
 
-pub struct PhysicsWorld {
-    gravity: Vector,
-    dt: f32,
-    pipeline: PhysicsPipeline,
-    island_manager: IslandManager,
-    broad_phase: DefaultBroadPhase,
-    narrow_phase: NarrowPhase,
-    rigid_body_set: RigidBodySet,
-    collider_set: ColliderSet,
-    impulse_joint_set: ImpulseJointSet,
-    multibody_joint_set: MultibodyJointSet,
-    ccd_solver: CCDSolver,
-    character_controller: KinematicCharacterController,
-    character_shape: SharedShape,
+pub struct PhysicsPlugin;
+
+impl Plugin for PhysicsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(
+            RapierPhysicsPlugin::<NoUserData>::default()
+                .with_length_unit(1.0)
+                .in_fixed_schedule(),
+        )
+        .insert_resource(Time::<Fixed>::from_hz(TICK_HZ))
+        .init_resource::<ServerTick>()
+        .add_systems(Startup, load_collision_mesh)
+        .add_systems(FixedFirst, advance_tick)
+        .add_systems(
+            FixedUpdate,
+            apply_player_inputs.before(PhysicsSet::SyncBackend),
+        )
+        .add_systems(FixedUpdate, queue_snapshots.after(PhysicsSet::Writeback));
+    }
 }
 
-impl PhysicsWorld {
-    pub fn new(dt: Real) -> Self {
-        Self {
-            gravity: Vec3::new(0.0, -9.8, 0.0),
-            dt,
-            pipeline: PhysicsPipeline::new(),
-            island_manager: IslandManager::new(),
-            broad_phase: DefaultBroadPhase::new(),
-            narrow_phase: NarrowPhase::new(),
-            rigid_body_set: RigidBodySet::new(),
-            collider_set: ColliderSet::new(),
-            impulse_joint_set: ImpulseJointSet::new(),
-            multibody_joint_set: MultibodyJointSet::new(),
-            ccd_solver: CCDSolver::new(),
-            character_controller: KinematicCharacterController {
-                offset: CharacterLength::Absolute(0.001),
-                snap_to_ground: Some(CharacterLength::Absolute(0.1)),
-                ..Default::default()
-            },
-            character_shape: SharedShape::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS),
-        }
-    }
+fn advance_tick(mut tick: ResMut<ServerTick>) {
+    tick.0 = tick.0.wrapping_add(1);
+}
 
-    pub fn load_collision(&mut self, path: &str) -> anyhow::Result<usize> {
-        let (doc, buffers, _) = gltf::import(path)
-            .with_context(|| format!("failed to load collision mesh: {}", path))?;
-
-        let mut count = 0;
-        for scene in doc.scenes() {
-            for node in scene.nodes() {
-                count += self.load_node(&node, &buffers, &Matrix4::identity())?;
-            }
-        }
-
-        Ok(count)
-    }
-
-    fn load_node(
-        &mut self,
-        node: &gltf::Node,
-        buffers: &[gltf::buffer::Data],
-        parent_transform: &Matrix4<f32>,
-    ) -> anyhow::Result<usize> {
-        let m = node.transform().matrix();
-        let local = Matrix4::from_columns(&[m[0].into(), m[1].into(), m[2].into(), m[3].into()]);
-        let global = parent_transform * local;
-
-        let mut count = 0;
-
-        if let Some(mesh) = node.mesh() {
-            for primitive in mesh.primitives() {
-                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-
-                let Some(positions) = reader.read_positions() else {
-                    continue;
-                };
-                let Some(indices) = reader.read_indices() else {
-                    continue;
-                };
-
-                let vertices: Vec<Vector> = positions
-                    .map(|p| {
-                        let transformed = global.transform_point(&Point3::from(p));
-                        Vec3::new(transformed.x, transformed.y, transformed.z)
-                    })
-                    .collect();
-
-                let tri_indices: Vec<[u32; 3]> = indices
-                    .into_u32()
-                    .collect::<Vec<u32>>()
-                    .chunks(3)
-                    .map(|c| [c[0], c[1], c[2]])
-                    .collect();
-
-                let body = self.rigid_body_set.insert(RigidBodyBuilder::fixed());
-                self.collider_set.insert_with_parent(
-                    ColliderBuilder::trimesh(vertices, tri_indices)?,
-                    body,
-                    &mut self.rigid_body_set,
-                );
-                count += 1;
-            }
-        }
-
-        for child in node.children() {
-            count += self.load_node(&child, buffers, &global)?;
-        }
-
-        Ok(count)
-    }
-
-    pub fn add_player(&mut self) -> PlayerBody {
-        let body_handle = self.rigid_body_set.insert(
-            RigidBodyBuilder::kinematic_position_based().translation(Vec3::new(0.0, 2.0, 0.0)),
-        );
-        self.collider_set.insert_with_parent(
-            ColliderBuilder::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS).translation(Vec3::new(
-                0.0,
-                COLLIDER_OFFSET,
-                0.0,
-            )),
-            body_handle,
-            &mut self.rigid_body_set,
-        );
-        PlayerBody {
-            body_handle,
-            velocity: Vec3::ZERO,
-            grounded: false,
-        }
-    }
-
-    pub fn remove_player(&mut self, player: PlayerBody) {
-        self.rigid_body_set.remove(
-            player.body_handle,
-            &mut self.island_manager,
-            &mut self.collider_set,
-            &mut self.impulse_joint_set,
-            &mut self.multibody_joint_set,
-            true,
-        );
-    }
-
-    pub fn update_player(&mut self, player: &mut PlayerBody, move_x: f32, move_z: f32, jump: bool) {
-        let speed = 5.0_f32;
-        let jump_speed = 4.5_f32;
-
-        let Some(body) = self.rigid_body_set.get(player.body_handle) else {
+fn load_collision_mesh(mut commands: Commands) {
+    let count = match spawn_collision_entities(&mut commands, COLLISION_MESH_PATH) {
+        Ok(c) => c,
+        Err(err) => {
+            error!("failed to load collision mesh: {:#}", err);
             return;
+        }
+    };
+    info!(
+        "loaded {} collision mesh(es) from {}",
+        count, COLLISION_MESH_PATH
+    );
+}
+
+fn spawn_collision_entities(commands: &mut Commands, path: &str) -> anyhow::Result<usize> {
+    let (doc, buffers, _) =
+        gltf::import(path).with_context(|| format!("failed to load collision mesh: {}", path))?;
+
+    let mut count = 0;
+    for scene in doc.scenes() {
+        for node in scene.nodes() {
+            count += spawn_node(commands, &node, &buffers, &Mat4::IDENTITY)?;
+        }
+    }
+    Ok(count)
+}
+
+fn spawn_node(
+    commands: &mut Commands,
+    node: &gltf::Node,
+    buffers: &[gltf::buffer::Data],
+    parent_transform: &Mat4,
+) -> anyhow::Result<usize> {
+    let local = Mat4::from_cols_array_2d(&node.transform().matrix());
+    let global = *parent_transform * local;
+
+    let mut count = 0;
+
+    if let Some(mesh) = node.mesh() {
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            let Some(positions) = reader.read_positions() else {
+                continue;
+            };
+            let Some(indices) = reader.read_indices() else {
+                continue;
+            };
+
+            let vertices: Vec<Vec3> = positions
+                .map(|p| global.transform_point3(Vec3::from(p)))
+                .collect();
+
+            let tri_indices: Vec<[u32; 3]> = indices
+                .into_u32()
+                .collect::<Vec<u32>>()
+                .chunks(3)
+                .map(|c| [c[0], c[1], c[2]])
+                .collect();
+
+            commands.spawn((
+                RigidBody::Fixed,
+                Collider::trimesh(vertices, tri_indices)?,
+                Transform::default(),
+            ));
+            count += 1;
+        }
+    }
+
+    for child in node.children() {
+        count += spawn_node(commands, &child, buffers, &global)?;
+    }
+
+    Ok(count)
+}
+
+/// Components needed for a player avatar in the physics world.
+/// Entity origin = player's feet, so snapshots send foot position directly.
+pub fn player_bundle() -> impl Bundle {
+    (
+        Transform::from_xyz(0.0, 2.0, 0.0),
+        RigidBody::KinematicPositionBased,
+        Collider::capsule(
+            Vec3::new(0.0, PLAYER_RADIUS, 0.0),
+            Vec3::new(0.0, PLAYER_RADIUS + 2.0 * PLAYER_HALF_HEIGHT, 0.0),
+            PLAYER_RADIUS,
+        ),
+        KinematicCharacterController {
+            offset: CharacterLength::Absolute(0.001),
+            snap_to_ground: Some(CharacterLength::Absolute(0.1)),
+            ..Default::default()
+        },
+        PlayerYaw::default(),
+        PlayerVelocity::default(),
+        PlayerInputBuffer::default(),
+    )
+}
+
+fn apply_player_inputs(
+    mut players: Query<(
+        &mut KinematicCharacterController,
+        &mut PlayerVelocity,
+        &mut PlayerInputBuffer,
+        &mut PlayerYaw,
+        Option<&KinematicCharacterControllerOutput>,
+    )>,
+) {
+    for (mut controller, mut velocity, mut input_buf, mut yaw, output) in &mut players {
+        // Reflects the post-move state from the previous fixed tick.
+        let grounded = output.map(|o| o.grounded).unwrap_or(false);
+
+        // Mirrors the original post-move "zero vertical velocity when grounded" step,
+        // moved to the start of the next tick now that we read output from last step.
+        if grounded {
+            velocity.0.y = 0.0;
+        } else {
+            velocity.0.y += GRAVITY * FIXED_DT;
+        }
+
+        let (move_x, move_z, jump) = if let Some(intent) = input_buf.queue.pop_front() {
+            input_buf.last_client_tick = intent.tick;
+            yaw.0 = intent.yaw;
+            (intent.move_x, intent.move_z, intent.jump)
+        } else {
+            (0.0, 0.0, false)
         };
 
-        if !player.grounded {
-            player.velocity.y += self.gravity.y * self.dt;
+        if jump && grounded {
+            velocity.0.y = JUMP_SPEED;
         }
 
-        if jump && player.grounded {
-            player.velocity.y = jump_speed;
-        }
-
-        let horizontal = nalgebra::Vector2::new(move_x, move_z);
-        let clamped = if horizontal.norm() > 1.0 {
+        let horizontal = Vec2::new(move_x, move_z);
+        let clamped = if horizontal.length() > 1.0 {
             horizontal.normalize()
         } else {
             horizontal
         };
         if move_x != 0.0 || move_z != 0.0 {
-            player.velocity.x = clamped.x * speed;
-            player.velocity.z = clamped.y * speed;
-        } else if player.grounded {
-            player.velocity.x = 0.0;
-            player.velocity.z = 0.0;
+            velocity.0.x = clamped.x * PLAYER_SPEED;
+            velocity.0.z = clamped.y * PLAYER_SPEED;
+        } else if grounded {
+            velocity.0.x = 0.0;
+            velocity.0.z = 0.0;
         }
 
-        let desired = player.velocity * self.dt;
-
-        let mut shape_pos = *body.position();
-        shape_pos.translation.y += COLLIDER_OFFSET;
-
-        let query_pipeline = self.broad_phase.as_query_pipeline(
-            &DefaultQueryDispatcher,
-            &self.rigid_body_set,
-            &self.collider_set,
-            QueryFilter::default().exclude_rigid_body(player.body_handle),
-        );
-        let movement = self.character_controller.move_shape(
-            self.dt,
-            &query_pipeline,
-            self.character_shape.as_ref(),
-            &shape_pos,
-            desired,
-            |_| {},
-        );
-
-        player.grounded = movement.grounded;
-        if player.grounded {
-            player.velocity.y = 0.0;
-        }
-
-        if let Some(body) = self.rigid_body_set.get_mut(player.body_handle) {
-            let new_pos = body.position().translation + movement.translation;
-            body.set_next_kinematic_translation(new_pos);
-        }
+        controller.translation = Some(velocity.0 * FIXED_DT);
     }
+}
 
-    pub fn tick(&mut self) {
-        self.pipeline.step(
-            self.gravity,
-            &IntegrationParameters {
-                dt: self.dt,
-                ..Default::default()
+fn queue_snapshots(
+    tick: Res<ServerTick>,
+    mut outgoing: MessageWriter<SendSnapshot>,
+    players: Query<(&Player, &Transform, &PlayerVelocity, &PlayerInputBuffer)>,
+) {
+    for (player, transform, velocity, input_buf) in &players {
+        outgoing.write(SendSnapshot {
+            id: player.0,
+            snapshot: PlayerSnapshot {
+                x: transform.translation.x,
+                y: transform.translation.y,
+                z: transform.translation.z,
+                velocity_x: velocity.0.x,
+                velocity_y: velocity.0.y,
+                velocity_z: velocity.0.z,
+                server_tick: tick.0,
+                last_client_tick: input_buf.last_client_tick,
             },
-            &mut self.island_manager,
-            &mut self.broad_phase,
-            &mut self.narrow_phase,
-            &mut self.rigid_body_set,
-            &mut self.collider_set,
-            &mut self.impulse_joint_set,
-            &mut self.multibody_joint_set,
-            &mut self.ccd_solver,
-            &(),
-            &(),
-        );
-    }
-
-    pub fn get_position(&self, player: &PlayerBody) -> Option<[f32; 3]> {
-        self.rigid_body_set.get(player.body_handle).map(|body| {
-            let pos = body.translation();
-            [pos.x, pos.y, pos.z]
-        })
-    }
-
-    pub fn get_velocity(&self, player: &PlayerBody) -> [f32; 3] {
-        [player.velocity.x, player.velocity.y, player.velocity.z]
+        });
     }
 }
